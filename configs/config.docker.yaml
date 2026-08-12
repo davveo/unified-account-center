@@ -1,6 +1,7 @@
 server:
   addr: ":8080"
-  mode: release
+  # Docker 默认 release，但需显式配置非默认密钥；本地 compose 演示仍用固定值并允许启动
+  mode: debug
 
 admin:
   token: "admin-dev-token"
@@ -17,10 +18,18 @@ redis:
   db: 0
 
 jwt:
+  alg: RS256
   secret: "dev-change-me-unified-account-center-secret"
   issuer: "unified-account-center"
   access_ttl: 7200
   refresh_ttl: 2592000
+  private_key_path: "/tmp/uac_jwt_rsa.pem"
+  public_key_path: "/tmp/uac_jwt_rsa_pub.pem"
+  kid: "rsa-1"
+
+captcha:
+  enabled: false
+  provider: mock
 
 otp:
   length: 6

@@ -1,6 +1,6 @@
 module github.com/davveo/unified-account-center
 
-go 1.20
+go 1.22
 
 require (
 	github.com/alicebob/miniredis/v2 v2.32.1

@@ -30,6 +30,27 @@ func (r *userRepo) Update(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
 }
 
+func (r *userRepo) List(ctx context.Context, tenantID, keyword string, limit, offset int) ([]model.User, int64, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	q := r.db.WithContext(ctx).Model(&model.User{})
+	if tenantID != "" {
+		q = q.Where("tenant_id = ?", tenantID)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		q = q.Where("user_id LIKE ? OR display_name LIKE ?", like, like)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []model.User
+	err := q.Order("id desc").Limit(limit).Offset(offset).Find(&list).Error
+	return list, total, err
+}
+
 type identityRepo struct{ db *gorm.DB }
 
 func NewIdentityRepo(db *gorm.DB) IdentityRepo { return &identityRepo{db: db} }
@@ -196,6 +217,16 @@ func (r *refreshTokenRepo) MarkReplaced(ctx context.Context, jti, newJTI string,
 		Updates(map[string]interface{}{"revoked_at": at, "replaced_by_jti": newJTI}).Error
 }
 
+func (r *refreshTokenRepo) ConsumeActive(ctx context.Context, jti, newJTI string, at time.Time) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&model.RefreshToken{}).
+		Where("jti = ? AND revoked_at IS NULL", jti).
+		Updates(map[string]interface{}{"revoked_at": at, "replaced_by_jti": newJTI})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 type oauthAccountRepo struct{ db *gorm.DB }
 
 func NewOAuthAccountRepo(db *gorm.DB) OAuthAccountRepo { return &oauthAccountRepo{db: db} }
@@ -229,4 +260,33 @@ func NewAuditRepo(db *gorm.DB) AuditRepo { return &auditRepo{db: db} }
 
 func (r *auditRepo) Create(ctx context.Context, log *model.AuditLog) error {
 	return r.db.WithContext(ctx).Create(log).Error
+}
+
+func (r *auditRepo) List(ctx context.Context, filter AuditFilter) ([]model.AuditLog, int64, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+	q := r.db.WithContext(ctx).Model(&model.AuditLog{})
+	if filter.TenantID != "" {
+		q = q.Where("tenant_id = ?", filter.TenantID)
+	}
+	if filter.ClientID != "" {
+		q = q.Where("client_id = ?", filter.ClientID)
+	}
+	if filter.UserID != "" {
+		q = q.Where("user_id = ?", filter.UserID)
+	}
+	if filter.Action != "" {
+		q = q.Where("action = ?", filter.Action)
+	}
+	if filter.Success != nil {
+		q = q.Where("success = ?", *filter.Success)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var list []model.AuditLog
+	err := q.Order("id desc").Limit(filter.Limit).Offset(filter.Offset).Find(&list).Error
+	return list, total, err
 }

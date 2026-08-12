@@ -1,0 +1,9 @@
+{
+  "name": "@uac/auth-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/client.ts",
+  "types": "src/client.ts",
+  "description": "Minimal TypeScript client for Unified Account Center"
+}

@@ -125,14 +125,11 @@ func AccessTTLFromCtx(c *gin.Context) time.Duration {
 	return time.Hour
 }
 
-// AdminAuth 管理后台简易鉴权。
+// AdminAuth 管理后台简易鉴权（仅接受 Header，禁止 query 传参）。
 func AdminAuth(token string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		got := c.GetHeader("X-Admin-Token")
-		if got == "" {
-			got = c.Query("admin_token")
-		}
-		if token == "" || got != token {
+		if token == "" || got == "" || got != token {
 			response.Fail(c, errcode.Unauthorized, "管理 Token 无效")
 			c.Abort()
 			return

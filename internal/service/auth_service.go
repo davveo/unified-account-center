@@ -15,6 +15,7 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/identity"
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
 	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
+	"github.com/davveo/unified-account-center/internal/pkg/observability"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
 	"github.com/davveo/unified-account-center/internal/repository"
 )
@@ -25,10 +26,15 @@ type AuthService struct {
 	auths *authenticator.Registry
 	jwt   *jwtutil.Manager
 	redis *redisx.Client
+	oauth *OAuthService
 }
 
 func NewAuthService(cfg *config.Config, repos *repository.Repos, auths *authenticator.Registry, jwtMgr *jwtutil.Manager, redis *redisx.Client) *AuthService {
 	return &AuthService{cfg: cfg, repos: repos, auths: auths, jwt: jwtMgr, redis: redis}
+}
+
+func (s *AuthService) SetOAuth(oauth *OAuthService) {
+	s.oauth = oauth
 }
 
 type ClientInfo struct {
@@ -37,7 +43,7 @@ type ClientInfo struct {
 }
 
 type LoginOptions struct {
-	AutoRegister *bool `json:"auto_register"`
+	// 预留扩展；auto_register 仅由应用配置决定，客户端不可覆盖。
 }
 
 type ChallengeDTO struct {
@@ -144,6 +150,28 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		dto.Credential = map[string]string{}
 	}
 
+	if dto.Method == model.MethodOAuth2 {
+		provider := dto.Provider
+		if provider == "" {
+			provider = dto.Credential["provider"]
+		}
+		redirectURI := dto.Credential["redirect_uri"]
+		if len(app.OAuthProviders) > 0 && !contains(app.OAuthProviders, provider) {
+			return nil, errcode.New(errcode.ForbiddenApp, "应用未启用该 OAuth Provider")
+		}
+		if !redirectAllowed(app.RedirectURIs, redirectURI) {
+			return nil, errcode.New(errcode.BadRequest, "redirect_uri 不在白名单")
+		}
+		if s.oauth == nil {
+			return nil, errcode.New(errcode.Internal, "OAuth 服务未初始化")
+		}
+		if err := s.oauth.ConsumeState(ctx, meta.ClientID, provider, dto.Credential["state"], redirectURI); err != nil {
+			s.audit(ctx, app, "", "login_fail", false, "oauth_state", meta)
+			return nil, err
+		}
+		dto.Provider = provider
+	}
+
 	principal, err := auth.Verify(ctx, authenticator.VerifyRequest{
 		ClientID:   meta.ClientID,
 		TenantID:   app.TenantID,
@@ -152,20 +180,20 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		Provider:   dto.Provider,
 		Credential: dto.Credential,
 		Scene:      model.SceneLogin,
+		IP:         meta.IP,
 	})
 	if err != nil {
 		s.audit(ctx, app, "", "login_fail", false, dto.Method, meta)
+		observability.IncLogin(false)
 		return nil, err
 	}
 
 	autoReg := app.AutoRegister
-	if dto.Options.AutoRegister != nil {
-		autoReg = *dto.Options.AutoRegister
-	}
 
 	user, isNew, err := s.resolveUser(ctx, app, principal, autoReg)
 	if err != nil {
 		s.audit(ctx, app, "", "login_fail", false, err.Error(), meta)
+		observability.IncLogin(false)
 		return nil, err
 	}
 
@@ -175,6 +203,7 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	}
 	views, _ := s.identityViews(ctx, user.UserID)
 	s.audit(ctx, app, user.UserID, "login_ok", true, dto.Method, meta)
+	observability.IncLogin(true)
 	return &LoginResult{
 		User: UserView{
 			UserID:      user.UserID,
@@ -191,39 +220,62 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 func (s *AuthService) Refresh(ctx context.Context, meta RequestMeta, refreshToken string) (*TokenDTO, error) {
 	app, err := s.requireApp(ctx, meta.ClientID)
 	if err != nil {
+		observability.IncRefresh(false)
 		return nil, err
 	}
 	if refreshToken == "" {
+		observability.IncRefresh(false)
 		return nil, errcode.New(errcode.BadRequest, "缺少 refresh_token")
 	}
 	hash := crypto.HashToken(refreshToken)
 	rt, err := s.repos.Refresh.FindByHash(ctx, hash)
 	if err != nil {
+		observability.IncRefresh(false)
 		return nil, errcode.Wrap(errcode.Internal, "查询 refresh 失败", err)
 	}
 	if rt == nil || rt.ClientID != app.ClientID {
+		observability.IncRefresh(false)
 		return nil, errcode.New(errcode.InvalidCred, "refresh_token 无效")
 	}
 	if rt.RevokedAt != nil {
-		// 复用检测：撤销该用户全部 refresh
+		// 已轮换/吊销后再用：按 reuse 处理，吊销该用户在本应用下全部 refresh
 		_ = s.repos.Refresh.RevokeAllByUser(ctx, rt.UserID, rt.ClientID, time.Now())
+		observability.IncRefresh(false)
 		return nil, errcode.New(errcode.InvalidCred, "refresh_token 已失效")
 	}
 	if time.Now().After(rt.ExpireAt) {
+		observability.IncRefresh(false)
 		return nil, errcode.New(errcode.InvalidCred, "refresh_token 已过期")
 	}
 	user, err := s.repos.User.FindByUserID(ctx, rt.UserID)
 	if err != nil || user == nil {
+		observability.IncRefresh(false)
 		return nil, errcode.New(errcode.InvalidCred, "用户不存在")
+	}
+	if user.Status != model.UserStatusActive {
+		observability.IncRefresh(false)
+		return nil, errcode.New(errcode.ForbiddenApp, "用户已禁用")
+	}
+
+	// 先原子消费旧 refresh，再签发新 token，避免并发双活
+	ok, err := s.repos.Refresh.ConsumeActive(ctx, rt.JTI, "", time.Now())
+	if err != nil {
+		observability.IncRefresh(false)
+		return nil, errcode.Wrap(errcode.Internal, "轮换 refresh 失败", err)
+	}
+	if !ok {
+		// 并发下输掉 CAS：只拒绝本次，不误伤赢家新签发的 refresh
+		observability.IncRefresh(false)
+		return nil, errcode.New(errcode.InvalidCred, "refresh_token 已失效")
 	}
 
 	newToken, err := s.issueTokens(ctx, app, user, ClientInfo{DeviceID: rt.DeviceID}, meta)
 	if err != nil {
+		observability.IncRefresh(false)
 		return nil, err
 	}
-	// rotation：旧 token 标记替换
-	_ = s.repos.Refresh.MarkReplaced(ctx, rt.JTI, "", time.Now())
 	s.audit(ctx, app, user.UserID, "token_refresh", true, "", meta)
+	observability.IncRefresh(true)
 	return newToken, nil
 }
 
@@ -313,6 +365,7 @@ func (s *AuthService) Bind(ctx context.Context, meta RequestMeta, userID string,
 		Provider:   dto.Provider,
 		Credential: dto.Credential,
 		Scene:      model.SceneBind,
+		IP:         meta.IP,
 	})
 	if err != nil {
 		s.audit(ctx, app, userID, "bind_fail", false, dto.Method, meta)
@@ -353,15 +406,25 @@ func (s *AuthService) Bind(ctx context.Context, meta RequestMeta, userID string,
 }
 
 type UnbindDTO struct {
-	Type     string `json:"type" binding:"required"`
-	Provider string `json:"provider"`
-	Value    string `json:"value"`
+	Type        string `json:"type" binding:"required"`
+	Provider    string `json:"provider"`
+	Value       string `json:"value"`
+	StepUpToken string `json:"step_up_token"`
 }
 
 func (s *AuthService) Unbind(ctx context.Context, meta RequestMeta, userID string, dto UnbindDTO) error {
 	app, err := s.requireApp(ctx, meta.ClientID)
 	if err != nil {
 		return err
+	}
+	if err := s.consumeStepUp(ctx, userID, app.ClientID, dto.StepUpToken); err != nil {
+		return err
+	}
+	if dto.Type != model.IdentityOAuth && dto.Value == "" {
+		return errcode.New(errcode.BadRequest, "解绑需指定 value")
+	}
+	if dto.Type == model.IdentityOAuth && dto.Provider == "" {
+		return errcode.New(errcode.BadRequest, "解绑 oauth 需指定 provider")
 	}
 	list, err := s.repos.Identity.ListByUserID(ctx, userID)
 	if err != nil {
@@ -410,12 +473,16 @@ func (s *AuthService) Unbind(ctx context.Context, meta RequestMeta, userID strin
 }
 
 type SetPasswordDTO struct {
-	Password string `json:"password" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+	StepUpToken string `json:"step_up_token"`
 }
 
 func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID string, dto SetPasswordDTO) error {
 	app, err := s.requireApp(ctx, meta.ClientID)
 	if err != nil {
+		return err
+	}
+	if err := s.consumeStepUp(ctx, userID, app.ClientID, dto.StepUpToken); err != nil {
 		return err
 	}
 	if err := s.validatePassword(dto.Password); err != nil {
@@ -428,6 +495,7 @@ func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID 
 	if err := s.repos.Credential.UpsertPassword(ctx, userID, hash); err != nil {
 		return errcode.Wrap(errcode.Internal, "保存密码失败", err)
 	}
+	_ = s.repos.Refresh.RevokeAllByUser(ctx, userID, app.ClientID, time.Now())
 	s.audit(ctx, app, userID, "password_set", true, "", meta)
 	return nil
 }
@@ -504,6 +572,7 @@ func (s *AuthService) ResetPasswordConfirm(ctx context.Context, meta RequestMeta
 	if err := s.repos.Credential.UpsertPassword(ctx, idn.UserID, hash); err != nil {
 		return errcode.Wrap(errcode.Internal, "保存密码失败", err)
 	}
+	_ = s.repos.Refresh.RevokeAllByUser(ctx, idn.UserID, app.ClientID, time.Now())
 	s.audit(ctx, app, idn.UserID, "password_reset", true, "", meta)
 	return nil
 }

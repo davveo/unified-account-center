@@ -19,6 +19,8 @@
       <nav class="nav">
         <button class="nav-item active" data-view="apps">应用凭证</button>
         <button class="nav-item" data-view="channels">对接渠道</button>
+        <button class="nav-item" data-view="users">用户管理</button>
+        <button class="nav-item" data-view="audits">审计日志</button>
         <button class="nav-item" data-view="playground">渠道测试</button>
       </nav>
       <div class="sidebar-foot">
@@ -81,6 +83,35 @@
           <h2>平台支持的对接渠道</h2>
           <p class="muted">以下为认证中台已实现的登录方式（Authenticator 插件）。应用侧通过 <code>allowed_methods</code> 按需启用。</p>
           <div id="channelsGrid" class="cards">加载中…</div>
+        </article>
+      </section>
+
+      <!-- Users -->
+      <section id="view-users" class="view">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>用户管理</h2>
+            <div>
+              <input id="userQuery" placeholder="搜索 user_id / 昵称" style="width:200px;margin-right:8px;padding:8px;border:1px solid var(--line);border-radius:8px;" />
+              <button id="refreshUsers" class="btn btn-ghost">刷新</button>
+            </div>
+          </div>
+          <div id="usersTable" class="table-wrap">加载中…</div>
+        </article>
+      </section>
+
+      <!-- Audits -->
+      <section id="view-audits" class="view">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>审计日志</h2>
+            <div>
+              <input id="auditUser" placeholder="user_id" style="width:140px;margin-right:6px;padding:8px;border:1px solid var(--line);border-radius:8px;" />
+              <input id="auditAction" placeholder="action" style="width:120px;margin-right:6px;padding:8px;border:1px solid var(--line);border-radius:8px;" />
+              <button id="refreshAudits" class="btn btn-ghost">查询</button>
+            </div>
+          </div>
+          <div id="auditsTable" class="table-wrap">加载中…</div>
         </article>
       </section>
 

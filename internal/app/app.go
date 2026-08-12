@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/davveo/unified-account-center/internal/adapter"
+	"github.com/davveo/unified-account-center/internal/adapter/captcha"
 	"github.com/davveo/unified-account-center/internal/adapter/email"
 	"github.com/davveo/unified-account-center/internal/adapter/oauth"
 	"github.com/davveo/unified-account-center/internal/adapter/sms"
@@ -16,10 +19,12 @@ import (
 	"github.com/davveo/unified-account-center/internal/mq"
 	"github.com/davveo/unified-account-center/internal/pkg/crypto"
 	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
+	"github.com/davveo/unified-account-center/internal/pkg/observability"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
 	"github.com/davveo/unified-account-center/internal/repository"
 	"github.com/davveo/unified-account-center/internal/server"
 	"github.com/davveo/unified-account-center/internal/service"
+	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -30,10 +35,13 @@ type Application struct {
 	DB     *gorm.DB
 	Redis  *redisx.Client
 	MQ     mq.Producer
-	Router interface{ Run(...string) error }
+	Router *gin.Engine
+	JWT    *jwtutil.Manager
 }
 
 func New(cfg *config.Config) (*Application, error) {
+	observability.InitLogger(cfg.Server.Mode)
+
 	db, err := openDB(cfg)
 	if err != nil {
 		return nil, err
@@ -64,6 +72,7 @@ func New(cfg *config.Config) (*Application, error) {
 	if cfg.Email.Provider == "mq" {
 		emailSender = email.NewMQ(producer, cfg.MQ.EmailTopic)
 	}
+	var captchaVerifier captcha.Verifier = captcha.NewMock(cfg.Captcha.Enabled)
 
 	repos := repository.NewRepos(db)
 	if err := bootstrapApp(context.Background(), cfg, repos); err != nil {
@@ -71,18 +80,27 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	oauthReg := oauth.NewRegistry(cfg.OAuth.Providers)
-	jwtMgr := jwtutil.NewManager(cfg.JWT.Secret, cfg.JWT.Issuer)
+
+	jwtMgr, err := buildJWT(cfg)
+	if err != nil {
+		return nil, err
+	}
+	{
+		b, _ := json.Marshal(map[string]interface{}{"msg": "jwt_ready", "alg": jwtMgr.Alg(), "kid": jwtMgr.Kid()})
+		log.Println(string(b))
+	}
 
 	auths := authenticator.NewRegistry(
-		authenticator.NewPhoneOTP(cfg.OTP, repos.Challenge, rdb, smsSender),
-		authenticator.NewEmailOTP(cfg.OTP, repos.Challenge, rdb, emailSender),
-		authenticator.NewPhonePassword(repos.Identity, repos.Credential),
-		authenticator.NewEmailPassword(repos.Identity, repos.Credential),
+		authenticator.NewPhoneOTP(cfg.OTP, repos.Challenge, rdb, smsSender, captchaVerifier),
+		authenticator.NewEmailOTP(cfg.OTP, repos.Challenge, rdb, emailSender, captchaVerifier),
+		authenticator.NewPhonePassword(repos.Identity, repos.Credential, rdb),
+		authenticator.NewEmailPassword(repos.Identity, repos.Credential, rdb),
 		authenticator.NewOAuth2(oauthReg),
 	)
 
 	authSvc := service.NewAuthService(cfg, repos, auths, jwtMgr, rdb)
-	oauthSvc := service.NewOAuthService(repos, oauthReg, authSvc)
+	oauthSvc := service.NewOAuthService(repos, oauthReg, authSvc, rdb)
+	authSvc.SetOAuth(oauthSvc)
 	adminSvc := service.NewAdminService(cfg, repos, oauthReg)
 	h := handler.NewAuthHandler(authSvc, oauthSvc)
 	adminH := handler.NewAdminHandler(adminSvc)
@@ -93,6 +111,7 @@ func New(cfg *config.Config) (*Application, error) {
 		AuthService:  authSvc,
 		JWT:          jwtMgr,
 		Redis:        rdb,
+		DB:           db,
 		AdminToken:   cfg.Admin.Token,
 		Mode:         cfg.Server.Mode,
 	})
@@ -103,7 +122,31 @@ func New(cfg *config.Config) (*Application, error) {
 		Redis:  rdb,
 		MQ:     producer,
 		Router: router,
+		JWT:    jwtMgr,
 	}, nil
+}
+
+func buildJWT(cfg *config.Config) (*jwtutil.Manager, error) {
+	if cfg.JWT.Alg == "HS256" {
+		return jwtutil.NewHMACManager(cfg.JWT.Secret, cfg.JWT.Issuer), nil
+	}
+	if cfg.JWT.PrivateKeyPath != "" {
+		_ = os.MkdirAll(dirOf(cfg.JWT.PrivateKeyPath), 0o755)
+	}
+	key, err := jwtutil.LoadOrGenerateRSA(cfg.JWT.PrivateKeyPath, cfg.JWT.PublicKeyPath, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("jwt rsa: %w", err)
+	}
+	return jwtutil.NewRSAManager(key, cfg.JWT.Issuer, cfg.JWT.Kid), nil
+}
+
+func dirOf(path string) string {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '/' {
+			return path[:i]
+		}
+	}
+	return "."
 }
 
 func (a *Application) Close() {
@@ -156,7 +199,7 @@ func bootstrapApp(ctx context.Context, cfg *config.Config, repos *repository.Rep
 	if err != nil {
 		return err
 	}
-	app := &model.App{
+	appRow := &model.App{
 		ClientID:         cfg.Bootstrap.DefaultClientID,
 		ClientSecretHash: hash,
 		Name:             "Demo App",
@@ -169,9 +212,9 @@ func bootstrapApp(ctx context.Context, cfg *config.Config, repos *repository.Rep
 		RefreshTTL:       cfg.JWT.RefreshTTL,
 		Status:           "active",
 	}
-	if err := repos.App.Create(ctx, app); err != nil {
+	if err := repos.App.Create(ctx, appRow); err != nil {
 		return err
 	}
-	log.Printf("bootstrap default app client_id=%s", app.ClientID)
+	log.Printf("bootstrap default app client_id=%s", appRow.ClientID)
 	return nil
 }

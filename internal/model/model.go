@@ -23,6 +23,7 @@ const (
 	SceneLogin         = "login"
 	SceneBind          = "bind"
 	SceneResetPassword = "reset_password"
+	SceneStepUp        = "step_up"
 )
 
 type User struct {

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -16,6 +17,7 @@ type Config struct {
 	JWT       JWTConfig       `yaml:"jwt"`
 	OTP       OTPConfig       `yaml:"otp"`
 	Password  PasswordConfig  `yaml:"password"`
+	Captcha   CaptchaConfig   `yaml:"captcha"`
 	MQ        MQConfig        `yaml:"mq"`
 	SMS       SMSConfig       `yaml:"sms"`
 	Email     EmailConfig     `yaml:"email"`
@@ -46,10 +48,19 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-	Secret     string `yaml:"secret"`
-	Issuer     string `yaml:"issuer"`
-	AccessTTL  int64  `yaml:"access_ttl"`
-	RefreshTTL int64  `yaml:"refresh_ttl"`
+	Alg            string `yaml:"alg"` // HS256 | RS256
+	Secret         string `yaml:"secret"`
+	Issuer         string `yaml:"issuer"`
+	AccessTTL      int64  `yaml:"access_ttl"`
+	RefreshTTL     int64  `yaml:"refresh_ttl"`
+	PrivateKeyPath string `yaml:"private_key_path"`
+	PublicKeyPath  string `yaml:"public_key_path"`
+	Kid            string `yaml:"kid"`
+}
+
+type CaptchaConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Provider string `yaml:"provider"` // mock
 }
 
 func (c JWTConfig) AccessDuration() time.Duration {
@@ -130,8 +141,15 @@ func (c *Config) applyDefaults() {
 	if c.Server.Mode == "" {
 		c.Server.Mode = "debug"
 	}
-	if c.Admin.Token == "" {
+	// 仅开发模式填充默认 Admin Token；release 必须显式配置
+	if c.Admin.Token == "" && c.Server.Mode != "release" {
 		c.Admin.Token = "admin-dev-token"
+	}
+	if c.JWT.Alg == "" {
+		c.JWT.Alg = "RS256"
+	}
+	if c.JWT.Kid == "" {
+		c.JWT.Kid = "rsa-1"
 	}
 	if c.JWT.AccessTTL == 0 {
 		c.JWT.AccessTTL = 7200
@@ -163,4 +181,28 @@ func (c *Config) applyDefaults() {
 	if c.Database.MaxOpen == 0 {
 		c.Database.MaxOpen = 50
 	}
+}
+
+// ValidateForRuntime 在 release 模式下拒绝不安全的默认密钥。
+func (c *Config) ValidateForRuntime() error {
+	if c.Server.Mode != "release" {
+		return nil
+	}
+	var bad []string
+	if c.Admin.Token == "" || c.Admin.Token == "admin-dev-token" {
+		bad = append(bad, "admin.token")
+	}
+	if c.JWT.Secret == "" || c.JWT.Secret == "dev-change-me-unified-account-center-secret" {
+		if c.JWT.Alg == "HS256" {
+			bad = append(bad, "jwt.secret")
+		}
+	}
+	if c.Bootstrap.CreateDefaultApp &&
+		(c.Bootstrap.DefaultClientSecret == "" || c.Bootstrap.DefaultClientSecret == "demo_secret_change_me") {
+		bad = append(bad, "bootstrap.default_client_secret")
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("release mode rejects insecure defaults: %s", strings.Join(bad, ", "))
+	}
+	return nil
 }

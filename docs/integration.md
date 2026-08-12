@@ -149,12 +149,11 @@ Base path：`/api/v1/auth`
   "client": {
     "device_id": "optional",
     "platform": "ios"
-  },
-  "options": {
-    "auto_register": true
   }
 }
 ```
+
+说明：是否自动注册由应用配置 `auto_register` 决定，**客户端不可覆盖**。
 
 手机密码：
 
@@ -177,10 +176,13 @@ OAuth2：
   "credential": {
     "code": "oauth_code",
     "redirect_uri": "https://app.example.com/callback",
+    "state": "从 /oauth/{provider}/start 返回的 state",
     "code_verifier": "pkce_verifier"
   }
 }
 ```
+
+`state` 与 `redirect_uri` 必须与 start 时一致（中台会一次性消费校验）。`redirect_uri` 须与应用白名单**精确匹配**。
 
 成功响应（结构固定）：
 
@@ -303,16 +305,18 @@ OAuth 解绑：
 }
 ```
 
-前端跳转 `authorize_url`，第三方回调后拿 `code` 调 `/login`（`method=oauth2`）。
+前端跳转 `authorize_url`，第三方回调后拿 `code` + `state` 调 `/login`（`method=oauth2`）。请妥善保存 start 返回的 `state`。
 
 `GET /oauth/{provider}/callback` 为中台回调入口（托管模式简化实现，返回 code/state）。
 
 ### 4.10 Token 内省（业务鉴权）
 
-业务服务可用：
+业务服务可用（**必须**携带 `X-Client-Id` + `X-Client-Secret`）：
 
 ```http
 GET /api/v1/auth/introspect
+X-Client-Id: app_xxx
+X-Client-Secret: ***
 Authorization: Bearer <access_token>
 ```
 
@@ -320,6 +324,10 @@ Authorization: Bearer <access_token>
 
 ```http
 POST /api/v1/auth/introspect
+X-Client-Id: app_xxx
+X-Client-Secret: ***
+Content-Type: application/json
+
 { "token": "..." }
 ```
 
@@ -393,7 +401,34 @@ async function loginByPhoneOTP(phone: string, otp: string, challengeId: string) 
 2. 全站 HTTPS；密码仅 TLS 下传输
 3. Access Token 短时效；Refresh 安全存储（HttpOnly Cookie 或系统钥匙串）
 4. OAuth 公网客户端启用 PKCE；严格校验 `redirect_uri`
-5. 对发码接口叠加人机验证（中台已预留 `captcha_token` 字段）
+5. 发码接口叠加人机验证：配置 `captcha.enabled=true` 后，`POST /api/v1/auth/challenge` 必须传有效 `captcha_token`（mock：非空且不为 `fail`）
+6. 敏感操作（解绑、设密）须先二次验证：
+   ```http
+   POST /api/v1/auth/step-up
+   Authorization: Bearer <access_token>
+   X-Client-Id: <client_id>
+   {"method":"password","credential":{"password":"..."}}
+   ```
+   响应拿到 `step_up_token`，再带到 `unbind` / `password/set` 请求体。
+7. 本地验签：`GET /.well-known/jwks.json`（RS256 公钥）；或网关调用 `POST /api/v1/auth/introspect`（需 `X-Client-Secret`）
+
+## 7.1 管理后台能力
+
+| 能力 | API |
+|------|-----|
+| 停用/改 methods | `PATCH /api/v1/admin/apps/:client_id` |
+| 轮换 secret | `POST /api/v1/admin/apps/:client_id/rotate-secret` |
+| 用户禁用 | `POST /api/v1/admin/users/:user_id/status` |
+| 强制下线 | `POST /api/v1/admin/users/:user_id/force-logout` |
+| 审计查询 | `GET /api/v1/admin/audits?user_id=&action=` |
+
+UI：`/admin/` → 应用凭证 / 用户管理 / 审计日志。
+
+## 7.2 运维探活
+
+- `GET /healthz`：探测 MySQL + Redis
+- `GET /metrics`：Prometheus 文本指标
+- 进程收到 SIGINT/SIGTERM 后优雅退出
 
 ## 8. 验收清单
 
@@ -405,6 +440,10 @@ async function loginByPhoneOTP(phone: string, otp: string, challengeId: string) 
 - [ ] 解绑唯一登录方式被拒绝
 - [ ] 应用 A 的 refresh 不能在应用 B 刷新成功
 - [ ] introspect 可支撑业务网关鉴权
+- [ ] captcha.enabled 时无 token / fail token 发码被拒
+- [ ] 解绑/设密无 step_up_token 被拒
+- [ ] JWKS 可下载且与 access token 验签一致
+- [ ] 并发 refresh 仅一方成功；reuse 旧 refresh 吊销家族
 
 ## 9. 联系与支持
 

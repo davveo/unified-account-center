@@ -18,11 +18,19 @@ redis:
   db: 0
 
 jwt:
+  alg: RS256 # HS256 | RS256
   # 开发环境可用 HMAC；生产建议 RS256 私钥文件
   secret: "dev-change-me-unified-account-center-secret"
   issuer: "unified-account-center"
   access_ttl: 7200        # seconds
   refresh_ttl: 2592000    # seconds
+  private_key_path: "configs/keys/jwt_rsa.pem"
+  public_key_path: "configs/keys/jwt_rsa_pub.pem"
+  kid: "rsa-1"
+
+captcha:
+  enabled: false
+  provider: mock # mock：enabled 时要求 captcha_token 非空且不为 fail
 
 otp:
   length: 6

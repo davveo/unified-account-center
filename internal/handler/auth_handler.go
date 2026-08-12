@@ -157,6 +157,22 @@ func (h *AuthHandler) SetPassword(c *gin.Context) {
 	response.OK(c, gin.H{"ok": true})
 }
 
+func (h *AuthHandler) StepUp(c *gin.Context) {
+	var dto service.StepUpDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	res, err := h.auth.StepUp(c.Request.Context(), h.meta(c), uid, dto)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
 func (h *AuthHandler) ResetStart(c *gin.Context) {
 	var dto service.ResetStartDTO
 	if err := c.ShouldBindJSON(&dto); err != nil {

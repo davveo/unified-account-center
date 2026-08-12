@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/davveo/unified-account-center/internal/authenticator"
@@ -81,6 +82,12 @@ func setupEnv(t *testing.T) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// SQLite 对并发写支持弱；单连接保证业务 CAS 语义可测，避免 table locked 噪声
+	sqlDB.SetMaxOpenConns(1)
 	if err := repository.AutoMigrate(db); err != nil {
 		t.Fatal(err)
 	}
@@ -121,14 +128,25 @@ func setupEnv(t *testing.T) *testEnv {
 	smsCap := &captureSMS{}
 	emailCap := &captureEmail{}
 	auths := authenticator.NewRegistry(
-		authenticator.NewPhoneOTP(cfg.OTP, repos.Challenge, rdb, smsCap),
-		authenticator.NewEmailOTP(cfg.OTP, repos.Challenge, rdb, emailCap),
-		authenticator.NewPhonePassword(repos.Identity, repos.Credential),
-		authenticator.NewEmailPassword(repos.Identity, repos.Credential),
+		authenticator.NewPhoneOTP(cfg.OTP, repos.Challenge, rdb, smsCap, nil),
+		authenticator.NewEmailOTP(cfg.OTP, repos.Challenge, rdb, emailCap, nil),
+		authenticator.NewPhonePassword(repos.Identity, repos.Credential, rdb),
+		authenticator.NewEmailPassword(repos.Identity, repos.Credential, rdb),
 	)
 	jwtMgr := jwtutil.NewManager(cfg.JWT.Secret, cfg.JWT.Issuer)
 	authSvc := service.NewAuthService(cfg, repos, auths, jwtMgr, rdb)
 	return &testEnv{cfg: cfg, repos: repos, auth: authSvc, sms: smsCap, email: emailCap, redis: rdb, mr: mr}
+}
+
+func (env *testEnv) grantStepUp(t *testing.T, userID string) string {
+	t.Helper()
+	token := "su_test_" + userID
+	if err := env.redis.SetJSON(context.Background(), "uac:stepup:"+token, map[string]string{
+		"user_id": userID, "client_id": "app_test",
+	}, 5*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 func meta() service.RequestMeta {
@@ -249,7 +267,9 @@ func TestPasswordLoginSetAndAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := env.auth.SetPassword(ctx, meta(), res.User.UserID, service.SetPasswordDTO{Password: "Passw0rd1"}); err != nil {
+	if err := env.auth.SetPassword(ctx, meta(), res.User.UserID, service.SetPasswordDTO{
+		Password: "Passw0rd1", StepUpToken: env.grantStepUp(t, res.User.UserID),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	login, err := env.auth.Login(ctx, meta(), service.LoginDTO{
@@ -315,7 +335,9 @@ func TestBindConflictAndUnbindGuard(t *testing.T) {
 	}
 
 	// 解绑唯一身份应失败
-	err = env.auth.Unbind(ctx, meta(), u1.User.UserID, service.UnbindDTO{Type: model.IdentityPhone, Value: "13600136000"})
+	err = env.auth.Unbind(ctx, meta(), u1.User.UserID, service.UnbindDTO{
+		Type: model.IdentityPhone, Value: "13600136000", StepUpToken: env.grantStepUp(t, u1.User.UserID),
+	})
 	if !errcode.Is(err, errcode.BadRequest) {
 		t.Fatalf("expect keep one identity: %v", err)
 	}
@@ -333,7 +355,9 @@ func TestBindConflictAndUnbindGuard(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := env.auth.Unbind(ctx, meta(), u1.User.UserID, service.UnbindDTO{Type: model.IdentityPhone, Value: "13600136000"}); err != nil {
+	if err := env.auth.Unbind(ctx, meta(), u1.User.UserID, service.UnbindDTO{
+		Type: model.IdentityPhone, Value: "13600136000", StepUpToken: env.grantStepUp(t, u1.User.UserID),
+	}); err != nil {
 		t.Fatal(err)
 	}
 }

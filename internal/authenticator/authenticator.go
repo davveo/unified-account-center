@@ -36,6 +36,7 @@ type VerifyRequest struct {
 	Provider   string
 	Credential map[string]string
 	Scene      string
+	IP         string
 }
 
 // Authenticator 登录方式插件接口。

@@ -116,13 +116,23 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
   -d '{"method":"phone_otp","identity":"13800138000","credential":{"challenge_id":"ch_xxx","otp":"123456"}}'
 ```
 
+## 鉴权增强（已落地）
+
+- 人机验证：`captcha.enabled=true` 时发码需传有效 `captcha_token`（mock 模式下非空且不为 `fail`）
+- RS256 + JWKS：`GET /.well-known/jwks.json`
+- 敏感操作二次验证：解绑 / 设密前先 `POST /api/v1/auth/step-up`，再携带 `step_up_token`
+
+## SDK
+
+见 [sdk/README.md](sdk/README.md)。
+
 ## 测试
 
 ```bash
 go test ./...
 ```
 
-覆盖场景包括：验证码登录复用用户、验证码重放/错误次数、密码登录、绑定冲突、解绑保护、Refresh 轮换与应用隔离等。
+覆盖场景包括：验证码登录复用用户、验证码重放/错误次数、密码登录、绑定冲突、解绑保护、Refresh 轮换与并发、应用隔离、auto_register 不可绕过、OAuth state 等。
 
 ## RocketMQ（可选）
 

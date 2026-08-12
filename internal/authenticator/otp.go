@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/davveo/unified-account-center/internal/adapter"
+	"github.com/davveo/unified-account-center/internal/adapter/captcha"
 	"github.com/davveo/unified-account-center/internal/config"
 	"github.com/davveo/unified-account-center/internal/model"
 	"github.com/davveo/unified-account-center/internal/pkg/crypto"
@@ -16,34 +17,43 @@ import (
 )
 
 type OTPAuth struct {
-	method string
-	idType string // phone | email
-	otpCfg config.OTPConfig
-	chRepo repository.ChallengeRepo
-	redis  *redisx.Client
-	sms    adapter.SMSSender
-	email  adapter.EmailSender
+	method  string
+	idType  string // phone | email
+	otpCfg  config.OTPConfig
+	chRepo  repository.ChallengeRepo
+	redis   *redisx.Client
+	sms     adapter.SMSSender
+	email   adapter.EmailSender
+	captcha captcha.Verifier
 }
 
-func NewPhoneOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis *redisx.Client, sms adapter.SMSSender) *OTPAuth {
+func NewPhoneOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis *redisx.Client, sms adapter.SMSSender, captchaVerifier captcha.Verifier) *OTPAuth {
+	if captchaVerifier == nil {
+		captchaVerifier = captcha.Noop{}
+	}
 	return &OTPAuth{
-		method: model.MethodPhoneOTP,
-		idType: model.IdentityPhone,
-		otpCfg: otpCfg,
-		chRepo: chRepo,
-		redis:  redis,
-		sms:    sms,
+		method:  model.MethodPhoneOTP,
+		idType:  model.IdentityPhone,
+		otpCfg:  otpCfg,
+		chRepo:  chRepo,
+		redis:   redis,
+		sms:     sms,
+		captcha: captchaVerifier,
 	}
 }
 
-func NewEmailOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis *redisx.Client, mail adapter.EmailSender) *OTPAuth {
+func NewEmailOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis *redisx.Client, mail adapter.EmailSender, captchaVerifier captcha.Verifier) *OTPAuth {
+	if captchaVerifier == nil {
+		captchaVerifier = captcha.Noop{}
+	}
 	return &OTPAuth{
-		method: model.MethodEmailOTP,
-		idType: model.IdentityEmail,
-		otpCfg: otpCfg,
-		chRepo: chRepo,
-		redis:  redis,
-		email:  mail,
+		method:  model.MethodEmailOTP,
+		idType:  model.IdentityEmail,
+		otpCfg:  otpCfg,
+		chRepo:  chRepo,
+		redis:   redis,
+		email:   mail,
+		captcha: captchaVerifier,
 	}
 }
 
@@ -67,6 +77,9 @@ func (a *OTPAuth) normalize(raw string) (string, string, error) {
 func (a *OTPAuth) Challenge(ctx context.Context, req ChallengeRequest) (*ChallengeResult, error) {
 	norm, masked, err := a.normalize(req.Identity)
 	if err != nil {
+		return nil, err
+	}
+	if err := a.captcha.Verify(ctx, req.CaptchaToken, req.IP); err != nil {
 		return nil, err
 	}
 

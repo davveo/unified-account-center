@@ -1,8 +1,10 @@
 (() => {
   const TOKEN_KEY = "uac_admin_token";
   const titles = {
-    apps: ["应用凭证", "创建 client_id / client_secret，管理接入应用"],
+    apps: ["应用凭证", "创建 / 停用应用，调整登录方式，轮换 client_secret"],
     channels: ["对接渠道", "查看中台已支持的登录方式与配置状态"],
+    users: ["用户管理", "禁用用户、强制下线"],
+    audits: ["审计日志", "查询登录 / 绑定 / 改密等操作记录"],
     playground: ["渠道测试", "用真实接口联调验证码 / 密码 / OAuth 登录"],
   };
 
@@ -57,6 +59,8 @@
     if (name === "channels") loadChannels();
     if (name === "playground") preparePlayground();
     if (name === "apps") loadApps();
+    if (name === "users") loadUsers();
+    if (name === "audits") loadAudits();
   }
 
   function renderMethodChecks(selected) {
@@ -111,7 +115,7 @@
       }
       $("appsTable").innerHTML = `<table>
         <thead><tr>
-          <th>名称</th><th>client_id</th><th>登录方式</th><th>状态</th><th>创建时间</th>
+          <th>名称</th><th>client_id</th><th>登录方式</th><th>状态</th><th>操作</th>
         </tr></thead>
         <tbody>
           ${state.apps
@@ -121,15 +125,109 @@
               <td class="mono">${escapeHtml(a.client_id)}</td>
               <td class="mono">${(a.allowed_methods || []).join(", ")}</td>
               <td>${escapeHtml(a.status)}</td>
-              <td>${escapeHtml(a.created_at)}</td>
+              <td>
+                <button class="btn btn-ghost" data-act="toggle" data-id="${escapeHtml(a.client_id)}" data-status="${escapeHtml(a.status)}">${a.status === "active" ? "停用" : "启用"}</button>
+                <button class="btn btn-ghost" data-act="methods" data-id="${escapeHtml(a.client_id)}">改方式</button>
+                <button class="btn btn-ghost" data-act="rotate" data-id="${escapeHtml(a.client_id)}">轮换密钥</button>
+              </td>
             </tr>`
             )
             .join("")}
         </tbody>
       </table>`;
       fillClientSelect();
+      $("appsTable").querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", () => onAppAction(btn.dataset.act, btn.dataset.id, btn.dataset.status));
+      });
     } catch (e) {
       $("appsTable").innerHTML = `<div class="result warn">${e.message}</div>`;
+    }
+  }
+
+  async function onAppAction(act, clientId, status) {
+    try {
+      if (act === "toggle") {
+        const next = status === "active" ? "disabled" : "active";
+        await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: next }),
+        });
+        loadApps();
+      } else if (act === "methods") {
+        const raw = prompt("输入 allowed_methods，逗号分隔", "phone_otp,email_otp,phone_password,email_password");
+        if (!raw) return;
+        await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ allowed_methods: raw.split(",").map((s) => s.trim()).filter(Boolean) }),
+        });
+        loadApps();
+      } else if (act === "rotate") {
+        if (!confirm("确认轮换密钥？旧 secret 立即失效。")) return;
+        const data = await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}/rotate-secret`, { method: "POST", body: "{}" });
+        alert(`新 client_secret（仅显示一次）:\n${data.client_secret}`);
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function loadUsers() {
+    try {
+      const q = encodeURIComponent($("userQuery").value.trim());
+      const data = await api(`/api/v1/admin/users?limit=50&q=${q}`);
+      const items = data.items || [];
+      $("usersTable").innerHTML = `<table>
+        <thead><tr><th>user_id</th><th>昵称</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>${items.map((u) => `<tr>
+          <td class="mono">${escapeHtml(u.user_id)}</td>
+          <td>${escapeHtml(u.display_name)}</td>
+          <td>${escapeHtml(u.status)}</td>
+          <td>
+            <button class="btn btn-ghost" data-uact="status" data-id="${escapeHtml(u.user_id)}" data-status="${escapeHtml(u.status)}">${u.status === "active" ? "禁用" : "启用"}</button>
+            <button class="btn btn-ghost" data-uact="kick" data-id="${escapeHtml(u.user_id)}">强制下线</button>
+          </td>
+        </tr>`).join("")}</tbody></table>`;
+      $("usersTable").querySelectorAll("button[data-uact]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            if (btn.dataset.uact === "status") {
+              const next = btn.dataset.status === "active" ? "disabled" : "active";
+              await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/status`, {
+                method: "POST", body: JSON.stringify({ status: next }),
+              });
+            } else {
+              await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/force-logout`, {
+                method: "POST", body: "{}",
+              });
+              alert("已吊销该用户全部 refresh token");
+            }
+            loadUsers();
+          } catch (e) { alert(e.message); }
+        });
+      });
+    } catch (e) {
+      $("usersTable").innerHTML = `<div class="result warn">${e.message}</div>`;
+    }
+  }
+
+  async function loadAudits() {
+    try {
+      const user = encodeURIComponent($("auditUser").value.trim());
+      const action = encodeURIComponent($("auditAction").value.trim());
+      const data = await api(`/api/v1/admin/audits?limit=50&user_id=${user}&action=${action}`);
+      const items = data.items || [];
+      $("auditsTable").innerHTML = `<table>
+        <thead><tr><th>时间</th><th>action</th><th>user</th><th>client</th><th>成功</th><th>detail</th></tr></thead>
+        <tbody>${items.map((a) => `<tr>
+          <td>${escapeHtml(a.created_at)}</td>
+          <td class="mono">${escapeHtml(a.action)}</td>
+          <td class="mono">${escapeHtml(a.user_id)}</td>
+          <td class="mono">${escapeHtml(a.client_id)}</td>
+          <td>${a.success ? "Y" : "N"}</td>
+          <td>${escapeHtml(a.detail)}</td>
+        </tr>`).join("")}</tbody></table>`;
+    } catch (e) {
+      $("auditsTable").innerHTML = `<div class="result warn">${e.message}</div>`;
     }
   }
 
@@ -199,6 +297,8 @@
   });
 
   $("refreshApps").addEventListener("click", loadApps);
+  $("refreshUsers")?.addEventListener("click", loadUsers);
+  $("refreshAudits")?.addEventListener("click", loadAudits);
   $("testMethod").addEventListener("change", onMethodChange);
 
   $("createAppForm").addEventListener("submit", async (e) => {
@@ -268,6 +368,7 @@
     setOutput(body);
     if (body.code === 0 && body.data) {
       $("testAuthURL").value = body.data.authorize_url || "";
+      window.__oauthState = body.data.state || "";
     }
   });
 
@@ -288,6 +389,7 @@
         credential: {
           code: $("testOAuthCode").value.trim(),
           redirect_uri: $("testRedirectUri").value.trim(),
+          state: window.__oauthState || "",
           code_verifier: $("testCodeVerifier").value.trim(),
         },
       };

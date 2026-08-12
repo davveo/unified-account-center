@@ -31,7 +31,8 @@ go.work.sum
 /bin/
 /tmp/
 coverage.out
+configs/keys/
 
 # Editor/IDE
-# .idea/
+.idea/
 # .vscode/

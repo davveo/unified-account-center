@@ -12,6 +12,7 @@ type UserRepo interface {
 	Create(ctx context.Context, user *model.User) error
 	FindByUserID(ctx context.Context, userID string) (*model.User, error)
 	Update(ctx context.Context, user *model.User) error
+	List(ctx context.Context, tenantID, keyword string, limit, offset int) ([]model.User, int64, error)
 }
 
 type IdentityRepo interface {
@@ -47,6 +48,7 @@ type RefreshTokenRepo interface {
 	Revoke(ctx context.Context, jti string, at time.Time) error
 	RevokeAllByUser(ctx context.Context, userID, clientID string, at time.Time) error
 	MarkReplaced(ctx context.Context, jti, newJTI string, at time.Time) error
+	ConsumeActive(ctx context.Context, jti, newJTI string, at time.Time) (bool, error)
 }
 
 type OAuthAccountRepo interface {
@@ -54,8 +56,19 @@ type OAuthAccountRepo interface {
 	Find(ctx context.Context, provider, subject string) (*model.OAuthAccount, error)
 }
 
+type AuditFilter struct {
+	TenantID string
+	ClientID string
+	UserID   string
+	Action   string
+	Success  *bool
+	Limit    int
+	Offset   int
+}
+
 type AuditRepo interface {
 	Create(ctx context.Context, log *model.AuditLog) error
+	List(ctx context.Context, filter AuditFilter) ([]model.AuditLog, int64, error)
 }
 
 type Repos struct {
