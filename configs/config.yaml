@@ -1,0 +1,75 @@
+server:
+  addr: ":8080"
+  mode: debug # debug | release
+
+admin:
+  # 管理后台鉴权 Token，请求头：X-Admin-Token
+  token: "admin-dev-token"
+
+database:
+  driver: mysql
+  dsn: "root:root@tcp(127.0.0.1:3306)/unified_account?charset=utf8mb4&parseTime=True&loc=Local"
+  max_idle: 10
+  max_open: 50
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+jwt:
+  # 开发环境可用 HMAC；生产建议 RS256 私钥文件
+  secret: "dev-change-me-unified-account-center-secret"
+  issuer: "unified-account-center"
+  access_ttl: 7200        # seconds
+  refresh_ttl: 2592000    # seconds
+
+otp:
+  length: 6
+  ttl: 300
+  resend_interval: 60
+  max_tries: 5
+
+password:
+  min_length: 8
+  require_letter_number: true
+
+mq:
+  enabled: false
+  name_server: "127.0.0.1:9876"
+  producer_group: "uac_producer"
+  sms_topic: "uac_sms"
+  email_topic: "uac_email"
+
+sms:
+  provider: mock # mock | mq
+  # 开发环境验证码会打到日志；生产通过 MQ 异步发短信
+
+email:
+  provider: mock # mock | mq
+
+oauth:
+  providers:
+    github:
+      client_id: ""
+      client_secret: ""
+      auth_url: "https://github.com/login/oauth/authorize"
+      token_url: "https://github.com/login/oauth/access_token"
+      userinfo_url: "https://api.github.com/user"
+      scopes: ["read:user", "user:email"]
+      # field_mapping: sub=id, name=login, avatar=avatar_url
+
+bootstrap:
+  # 启动时若不存在则创建默认应用，便于本地联调
+  create_default_app: true
+  default_client_id: "app_demo"
+  default_client_secret: "demo_secret_change_me"
+  default_allowed_methods:
+    - phone_otp
+    - phone_password
+    - email_otp
+    - email_password
+    - oauth2
+  default_redirect_uris:
+    - "http://localhost:3000/callback"
+  auto_register: true

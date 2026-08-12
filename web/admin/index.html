@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>统一账户中台 · 管理后台</title>
+  <link rel="stylesheet" href="/admin/static/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">UAC</div>
+        <div>
+          <div class="brand-title">账户中台</div>
+          <div class="brand-sub">Admin Console</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="apps">应用凭证</button>
+        <button class="nav-item" data-view="channels">对接渠道</button>
+        <button class="nav-item" data-view="playground">渠道测试</button>
+      </nav>
+      <div class="sidebar-foot">
+        <label class="field-label">Admin Token</label>
+        <input id="adminToken" type="password" placeholder="X-Admin-Token" />
+        <button id="saveToken" class="btn btn-ghost">保存</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h1 id="pageTitle">应用凭证</h1>
+        <p id="pageDesc">创建 client_id / client_secret，管理接入应用</p>
+      </header>
+
+      <!-- Apps -->
+      <section id="view-apps" class="view active">
+        <div class="grid-2">
+          <article class="panel">
+            <h2>创建应用</h2>
+            <form id="createAppForm" class="form">
+              <label>应用名称 *</label>
+              <input name="name" required placeholder="例如：商城 App" />
+
+              <label>自定义 client_id（可选）</label>
+              <input name="client_id" placeholder="空则自动生成 app_xxx" />
+
+              <label>自定义 client_secret（可选）</label>
+              <input name="client_secret" placeholder="空则自动生成，仅创建时展示一次" />
+
+              <label>启用登录方式</label>
+              <div class="checks" id="methodChecks"></div>
+
+              <label>Redirect URIs（每行一个）</label>
+              <textarea name="redirect_uris" rows="3" placeholder="http://localhost:3000/callback"></textarea>
+
+              <label class="inline">
+                <input type="checkbox" name="auto_register" checked />
+                允许自动注册
+              </label>
+
+              <button type="submit" class="btn btn-primary">创建并生成凭证</button>
+            </form>
+            <div id="createResult" class="result hidden"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>应用列表</h2>
+              <button id="refreshApps" class="btn btn-ghost">刷新</button>
+            </div>
+            <div id="appsTable" class="table-wrap">加载中…</div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Channels -->
+      <section id="view-channels" class="view">
+        <article class="panel">
+          <h2>平台支持的对接渠道</h2>
+          <p class="muted">以下为认证中台已实现的登录方式（Authenticator 插件）。应用侧通过 <code>allowed_methods</code> 按需启用。</p>
+          <div id="channelsGrid" class="cards">加载中…</div>
+        </article>
+      </section>
+
+      <!-- Playground -->
+      <section id="view-playground" class="view">
+        <div class="grid-2">
+          <article class="panel">
+            <h2>测试配置</h2>
+            <div class="form">
+              <label>选择应用 client_id</label>
+              <select id="testClientId"></select>
+
+              <label>client_secret（可选，服务端调用建议带上）</label>
+              <input id="testClientSecret" type="password" placeholder="可选" />
+
+              <label>测试渠道</label>
+              <select id="testMethod"></select>
+
+              <div id="oauthProviderRow" class="hidden">
+                <label>OAuth Provider</label>
+                <select id="testProvider"></select>
+                <label>redirect_uri</label>
+                <input id="testRedirectUri" value="http://localhost:3000/callback" />
+              </div>
+
+              <label id="identityLabel">手机号 / 邮箱</label>
+              <input id="testIdentity" placeholder="13800138000 或 user@example.com" />
+
+              <div id="otpBlock">
+                <button id="btnChallenge" type="button" class="btn btn-ghost">1. 发送验证码</button>
+                <label>challenge_id</label>
+                <input id="testChallengeId" readonly placeholder="发码后自动填充" />
+                <label>验证码 OTP</label>
+                <input id="testOTP" placeholder="开发环境请看服务日志 [mock-sms]/[mock-email]" />
+              </div>
+
+              <div id="pwdBlock" class="hidden">
+                <label>密码</label>
+                <input id="testPassword" type="password" placeholder="Passw0rd1" />
+              </div>
+
+              <div id="oauthBlock" class="hidden">
+                <button id="btnOAuthStart" type="button" class="btn btn-ghost">获取授权 URL</button>
+                <label>authorize_url</label>
+                <input id="testAuthURL" readonly />
+                <label>授权码 code</label>
+                <input id="testOAuthCode" placeholder="从回调拿到的 code" />
+                <label>PKCE code_verifier（可选）</label>
+                <input id="testCodeVerifier" />
+              </div>
+
+              <button id="btnLogin" type="button" class="btn btn-primary">2. 执行登录</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <h2>响应结果</h2>
+            <pre id="testOutput" class="codeblock">等待操作…</pre>
+            <div id="tokenBox" class="token-box hidden">
+              <div><strong>access_token</strong></div>
+              <textarea id="accessTokenOut" rows="3" readonly></textarea>
+              <div><strong>refresh_token</strong></div>
+              <textarea id="refreshTokenOut" rows="2" readonly></textarea>
+              <button id="btnMe" type="button" class="btn btn-ghost">调用 /me</button>
+              <button id="btnRefresh" type="button" class="btn btn-ghost">刷新 Token</button>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/admin/static/app.js"></script>
+</body>
+</html>

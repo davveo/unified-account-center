@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+*.md
+!README.md
+bin
+tmp
+coverage.*
+*.test
+.env
+agent-transcripts
+**/node_modules
