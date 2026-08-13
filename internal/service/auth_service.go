@@ -39,8 +39,9 @@ func (s *AuthService) SetOAuth(oauth *OAuthService) {
 }
 
 type ClientInfo struct {
-	DeviceID string `json:"device_id"`
-	Platform string `json:"platform"`
+	DeviceID    string `json:"device_id"`
+	Platform    string `json:"platform"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 type LoginOptions struct {
@@ -92,6 +93,7 @@ type LoginResult struct {
 	Identities []IdentityView `json:"identities"`
 	Token      TokenDTO       `json:"token"`
 	IsNewUser  bool           `json:"is_new_user"`
+	RiskFlags  []string       `json:"risk_flags,omitempty"`
 }
 
 type RequestMeta struct {
@@ -133,6 +135,9 @@ func (s *AuthService) Challenge(ctx context.Context, meta RequestMeta, dto Chall
 		CaptchaToken: dto.CaptchaToken,
 		IP:           meta.IP,
 	})
+	if err != nil && errcode.Is(err, errcode.RateLimited) {
+		s.alertOTPLimit(ctx, "challenge", dto.Identity)
+	}
 	s.audit(ctx, app, "", "challenge", err == nil, dto.Method+":"+dto.Identity, meta)
 	return res, err
 }
@@ -140,6 +145,9 @@ func (s *AuthService) Challenge(ctx context.Context, meta RequestMeta, dto Chall
 func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO) (*LoginResult, error) {
 	app, err := s.requireApp(ctx, meta.ClientID)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.assertNotLocked(ctx, dto.Identity, meta.IP); err != nil {
 		return nil, err
 	}
 	if !methodAllowed(app, dto.Method) {
@@ -197,6 +205,7 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	if err != nil {
 		s.audit(ctx, app, "", "login_fail", false, dto.Method, meta)
 		observability.IncLogin(false)
+		s.noteLoginFailure(ctx, dto.Identity, meta.IP)
 		return nil, err
 	}
 
@@ -209,10 +218,38 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		return nil, err
 	}
 
+	riskFlags := []string{}
+	newDevice := s.isNewDevice(ctx, user.UserID, app.ClientID, dto.Client.DeviceID)
+	if newDevice {
+		riskFlags = append(riskFlags, "new_device")
+	}
+
+	needMFA := s.userHasMFA(ctx, user.UserID)
+	if needMFA || (newDevice && s.cfg.Risk.RequireMFAOnNewDevice && needMFA) {
+		mfaToken, methods, err := s.createMFAPending(ctx, app, user, dto.Client, isNew)
+		if err != nil {
+			return nil, err
+		}
+		observability.IncLogin(false)
+		s.audit(ctx, app, user.UserID, "mfa_required", true, dto.Method, meta)
+		return nil, errcode.NewWithData(errcode.MFARequired, "需要 MFA 验证", map[string]interface{}{
+			"mfa_token":   mfaToken,
+			"mfa_methods": methods,
+			"risk_flags":  riskFlags,
+			"expire_in":   int64(mfaPendingTTL.Seconds()),
+		})
+	}
+	// 新设备但未启用 MFA：仅标记风控，仍放行（可在配置强制时再收紧）
+	if newDevice && s.cfg.Risk.RequireMFAOnNewDevice && !needMFA {
+		riskFlags = append(riskFlags, "new_device_no_mfa")
+	}
+
 	token, err := s.issueTokens(ctx, app, user, dto.Client, meta)
 	if err != nil {
 		return nil, err
 	}
+	_ = s.rememberDevice(ctx, user.UserID, app.ClientID, dto.Client, meta)
+	s.clearLoginFailures(ctx, dto.Identity, meta.IP)
 	views, _ := s.identityViews(ctx, user.UserID)
 	s.audit(ctx, app, user.UserID, "login_ok", true, dto.Method, meta)
 	observability.IncLogin(true)
@@ -226,6 +263,7 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		Identities: views,
 		Token:      *token,
 		IsNewUser:  isNew,
+		RiskFlags:  riskFlags,
 	}, nil
 }
 
@@ -414,7 +452,11 @@ func (s *AuthService) Bind(ctx context.Context, meta RequestMeta, userID string,
 		if existing.UserID == userID {
 			return nil
 		}
-		return errcode.New(errcode.ConflictAccount, "该账户已被其他用户绑定")
+		return errcode.NewWithData(errcode.ConflictAccount, "该账户已被其他用户绑定", map[string]interface{}{
+			"merge_available":   true,
+			"conflict_user_id":  existing.UserID,
+			"hint":              "可调用 POST /api/v1/auth/merge/start 验证对方身份后合并",
+		})
 	}
 	if err := s.repos.Identity.Create(ctx, &model.Identity{
 		TenantID:   app.TenantID,
@@ -753,6 +795,7 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 		UserID:    user.UserID,
 		ClientID:  app.ClientID,
 		DeviceID:  client.DeviceID,
+		Fingerprint: client.Fingerprint,
 		IP:        meta.IP,
 		UA:        meta.UA,
 		ExpireAt:  time.Now().Add(refreshTTL),

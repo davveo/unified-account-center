@@ -19,11 +19,14 @@ const (
 	MethodEmailOTP      = "email_otp"
 	MethodEmailPassword = "email_password"
 	MethodOAuth2        = "oauth2"
+	MethodPasskey       = "passkey"
+	MethodTOTP          = "totp"
 
 	SceneLogin         = "login"
 	SceneBind          = "bind"
 	SceneResetPassword = "reset_password"
 	SceneStepUp        = "step_up"
+	SceneMerge         = "merge"
 )
 
 type User struct {
@@ -59,11 +62,46 @@ type Credential struct {
 	PasswordHash      string     `gorm:"size:255" json:"-"`
 	PasswordUpdatedAt *time.Time `json:"password_updated_at,omitempty"`
 	MFASecret         string     `gorm:"size:255" json:"-"`
+	MFAEnabled        bool       `gorm:"not null;default:false" json:"mfa_enabled"`
+	MFABackupHashes   StringList `gorm:"type:json" json:"-"` // 一次性备份码哈希
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 func (Credential) TableName() string { return "credentials" }
+
+// WebAuthnCredential Passkey 凭证。
+type WebAuthnCredential struct {
+	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	CredentialID string    `gorm:"size:512;uniqueIndex;not null" json:"credential_id"`
+	UserID       string    `gorm:"size:64;index;not null" json:"user_id"`
+	Name         string    `gorm:"size:128" json:"name"`
+	PublicKey    string    `gorm:"type:text;not null" json:"-"`
+	Attestation  string    `gorm:"type:text" json:"-"`
+	SignCount    uint32    `gorm:"not null;default:0" json:"sign_count"`
+	Transports   StringList `gorm:"type:json" json:"transports,omitempty"`
+	AAGUID       string    `gorm:"size:64" json:"aaguid,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
+}
+
+func (WebAuthnCredential) TableName() string { return "webauthn_credentials" }
+
+// KnownDevice 已见过的设备，用于新设备风控。
+type KnownDevice struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
+	UserID     string    `gorm:"size:64;uniqueIndex:uk_device;not null" json:"user_id"`
+	ClientID   string    `gorm:"size:64;uniqueIndex:uk_device;not null" json:"client_id"`
+	DeviceID   string    `gorm:"size:128;uniqueIndex:uk_device;not null" json:"device_id"`
+	Fingerprint string   `gorm:"size:128" json:"fingerprint"`
+	IP         string    `gorm:"size:64" json:"ip"`
+	UA         string    `gorm:"size:512" json:"ua"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (KnownDevice) TableName() string { return "known_devices" }
 
 type AuthChallenge struct {
 	ID          uint64     `gorm:"primaryKey;autoIncrement" json:"-"`
@@ -171,6 +209,7 @@ type RefreshToken struct {
 	UserID           string     `gorm:"size:64;index;not null" json:"user_id"`
 	ClientID         string     `gorm:"size:64;index;not null" json:"client_id"`
 	DeviceID         string     `gorm:"size:128" json:"device_id"`
+	Fingerprint      string     `gorm:"size:128" json:"fingerprint"`
 	IP               string     `gorm:"size:64" json:"ip"`
 	UA               string     `gorm:"size:512" json:"ua"`
 	ExpireAt         time.Time  `gorm:"index;not null" json:"expire_at"`

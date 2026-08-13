@@ -38,7 +38,7 @@ func TestAdminCreateAndListApps(t *testing.T) {
 		}},
 	}
 	repos := repository.NewRepos(db)
-	admin := service.NewAdminService(cfg, repos, oauth.NewRegistry(cfg.OAuth.Providers))
+	admin := service.NewAdminService(cfg, repos, oauth.NewRegistry(cfg.OAuth.Providers), nil)
 
 	created, err := admin.CreateApp(context.Background(), service.CreateAppRequest{
 		Name:           "测试应用",

@@ -10,6 +10,7 @@ const (
 	InvalidCred     = 40110
 	ForbiddenApp    = 40310
 	ConflictAccount = 40910
+	MFARequired     = 40120
 	RateLimited     = 42900
 	NotFound        = 40400
 	Internal        = 50000
@@ -22,6 +23,7 @@ var messages = map[int]string{
 	InvalidCred:     "凭证无效",
 	ForbiddenApp:    "应用无权限",
 	ConflictAccount: "账户冲突",
+	MFARequired:     "需要二次验证",
 	RateLimited:     "请求过于频繁",
 	NotFound:        "资源不存在",
 	Internal:        "内部错误",
@@ -38,6 +40,7 @@ type AppError struct {
 	Code    int
 	Message string
 	Cause   error
+	Data    interface{}
 }
 
 func (e *AppError) Error() string {
@@ -54,6 +57,12 @@ func New(code int, msg string) *AppError {
 		msg = Message(code)
 	}
 	return &AppError{Code: code, Message: msg}
+}
+
+func NewWithData(code int, msg string, data interface{}) *AppError {
+	ae := New(code, msg)
+	ae.Data = data
+	return ae
 }
 
 func Wrap(code int, msg string, cause error) *AppError {

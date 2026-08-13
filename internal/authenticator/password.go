@@ -27,7 +27,8 @@ type PasswordAuth struct {
 	redis    *redisx.Client
 }
 
-func NewPhonePassword(idRepo repository.IdentityRepo, credRepo repository.CredentialRepo, rdb *redisx.Client) *PasswordAuth {
+func NewPhonePassword(idRepo repository.IdentityRepo,
+	credRepo repository.CredentialRepo, rdb *redisx.Client) *PasswordAuth {
 	return &PasswordAuth{
 		method:   model.MethodPhonePassword,
 		idType:   model.IdentityPhone,
@@ -37,7 +38,8 @@ func NewPhonePassword(idRepo repository.IdentityRepo, credRepo repository.Creden
 	}
 }
 
-func NewEmailPassword(idRepo repository.IdentityRepo, credRepo repository.CredentialRepo, rdb *redisx.Client) *PasswordAuth {
+func NewEmailPassword(idRepo repository.IdentityRepo,
+	credRepo repository.CredentialRepo, rdb *redisx.Client) *PasswordAuth {
 	return &PasswordAuth{
 		method:   model.MethodEmailPassword,
 		idType:   model.IdentityEmail,

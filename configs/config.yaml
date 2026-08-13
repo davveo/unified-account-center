@@ -96,3 +96,17 @@ bootstrap:
   default_redirect_uris:
     - "http://localhost:3000/callback"
   auto_register: true
+
+risk:
+  lock_after_failures: 10
+  lock_window_sec: 900
+  lock_duration_sec: 900
+  require_mfa_on_new_device: true
+  alert_webhook_url: ""
+
+webauthn:
+  rp_display_name: "Unified Account Center"
+  rp_id: "localhost"
+  rp_origins:
+    - "http://localhost:8080"
+    - "http://127.0.0.1:8080"

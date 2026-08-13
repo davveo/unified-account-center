@@ -102,7 +102,7 @@ func New(cfg *config.Config) (*Application, error) {
 	authSvc := service.NewAuthService(cfg, repos, auths, jwtMgr, rdb)
 	oauthSvc := service.NewOAuthService(repos, oauthReg, authSvc, rdb)
 	authSvc.SetOAuth(oauthSvc)
-	adminSvc := service.NewAdminService(cfg, repos, oauthReg)
+	adminSvc := service.NewAdminService(cfg, repos, oauthReg, rdb)
 	h := handler.NewAuthHandler(authSvc, oauthSvc)
 	adminH := handler.NewAdminHandler(adminSvc)
 

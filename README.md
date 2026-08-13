@@ -124,7 +124,10 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
 - 托管登录：`GET /login?client_id=...&redirect_uri=...` → 授权码回跳 → `POST /api/v1/auth/token`
 - 会话管理：`GET/DELETE /api/v1/auth/sessions`，`POST /sessions/revoke-others`
 - OAuth：强制 PKCE（应用 `require_pkce`）、微信/企微 Provider、Admin 热更新 Provider
-
+- MFA/TOTP：setup/enable → 登录 `40120` → `/mfa/complete`；step-up `method=totp`；备份码
+- Passkey：`/passkey/register|login` + 列表吊销；配置 `webauthn.*`
+- 账号合并：绑定冲突引导 `/merge/start|confirm`；Admin 人工合并
+- 风控：失败锁定、新设备 MFA、设备指纹、告警 webhook；Admin `/risk/unlock`
 ## SDK
 
 见 [sdk/README.md](sdk/README.md)。

@@ -106,7 +106,8 @@ func NewManager(secret, issuer string) *Manager {
 func (m *Manager) Alg() string { return m.alg }
 func (m *Manager) Kid() string { return m.kid }
 
-func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Duration) (token string, jti string, exp time.Time, err error) {
+func (m *Manager) IssueAccess(userID,
+	clientID, tenantID string, ttl time.Duration) (token string, jti string, exp time.Time, err error) {
 	jti = idgen.New("at")
 	exp = time.Now().Add(ttl)
 	claims := Claims{

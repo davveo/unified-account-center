@@ -120,4 +120,27 @@ export class AuthClient {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
   }
+
+  mfaComplete(input: { mfa_token: string; code: string; client?: Record<string, unknown> }) {
+    return this.request<Record<string, unknown>>("/api/v1/auth/mfa/complete", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  mergeStart(accessToken: string, input: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>("/api/v1/auth/merge/start", {
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
+
+  mergeConfirm(accessToken: string, mergeToken: string) {
+    return this.request<Record<string, unknown>>("/api/v1/auth/merge/confirm", {
+      method: "POST",
+      body: JSON.stringify({ merge_token: mergeToken }),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
 }

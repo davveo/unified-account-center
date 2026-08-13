@@ -27,7 +27,8 @@ type OTPAuth struct {
 	captcha captcha.Verifier
 }
 
-func NewPhoneOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis *redisx.Client, sms adapter.SMSSender, captchaVerifier captcha.Verifier) *OTPAuth {
+func NewPhoneOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo,
+	redis *redisx.Client, sms adapter.SMSSender, captchaVerifier captcha.Verifier) *OTPAuth {
 	if captchaVerifier == nil {
 		captchaVerifier = captcha.Noop{}
 	}
@@ -42,7 +43,8 @@ func NewPhoneOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis
 	}
 }
 
-func NewEmailOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo, redis *redisx.Client, mail adapter.EmailSender, captchaVerifier captcha.Verifier) *OTPAuth {
+func NewEmailOTP(otpCfg config.OTPConfig, chRepo repository.ChallengeRepo,
+	redis *redisx.Client, mail adapter.EmailSender, captchaVerifier captcha.Verifier) *OTPAuth {
 	if captchaVerifier == nil {
 		captchaVerifier = captcha.Noop{}
 	}

@@ -172,3 +172,43 @@ func (h *AdminHandler) ListUserSessions(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"items": list})
 }
+
+func (h *AdminHandler) MergeUsers(c *gin.Context) {
+	var body struct {
+		TargetUserID string `json:"target_user_id" binding:"required"`
+		SourceUserID string `json:"source_user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	if err := h.admin.AdminMergeUsers(c.Request.Context(), body.TargetUserID, body.SourceUserID); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AdminHandler) ResetMFA(c *gin.Context) {
+	if err := h.admin.AdminResetMFA(c.Request.Context(), c.Param("user_id")); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AdminHandler) UnlockRisk(c *gin.Context) {
+	var body struct {
+		Kind string `json:"kind" binding:"required"` // id | ip
+		Key  string `json:"key" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	if err := h.admin.AdminUnlock(c.Request.Context(), body.Kind, body.Key); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}

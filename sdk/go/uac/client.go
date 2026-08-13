@@ -189,6 +189,67 @@ func (c *Client) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifi
 	return out, err
 }
 
+func (c *Client) MFAComplete(ctx context.Context, mfaToken, code string, client map[string]any) (map[string]any, error) {
+	payload := map[string]any{"mfa_token": mfaToken, "code": code}
+	if client != nil {
+		payload["client"] = client
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodPost, "/api/v1/auth/mfa/complete", payload, &out, false)
+	return out, err
+}
+
+func (c *Client) MergeStart(ctx context.Context, accessToken string, payload map[string]any) (map[string]any, error) {
+	return c.authed(ctx, http.MethodPost, "/api/v1/auth/merge/start", accessToken, payload)
+}
+
+func (c *Client) MergeConfirm(ctx context.Context, accessToken, mergeToken string) error {
+	_, err := c.authed(ctx, http.MethodPost, "/api/v1/auth/merge/confirm", accessToken, map[string]any{
+		"merge_token": mergeToken,
+	})
+	return err
+}
+
+func (c *Client) authed(ctx context.Context, method, path, accessToken string, payload map[string]any) (map[string]any, error) {
+	var rdr io.Reader
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.Endpoint+path, rdr)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Client-Id", c.ClientID)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	var envelope struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, err
+	}
+	if envelope.Code != 0 {
+		return nil, &APIError{Code: envelope.Code, Message: envelope.Message}
+	}
+	var out map[string]any
+	if len(envelope.Data) > 0 {
+		_ = json.Unmarshal(envelope.Data, &out)
+	}
+	return out, nil
+}
+
 func urlQueryEscape(s string) string {
 	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }

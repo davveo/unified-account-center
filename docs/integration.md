@@ -67,6 +67,7 @@ Content-Type: application/json
 | 40001 | 参数错误 |
 | 40100 | 未登录 |
 | 40110 | 凭证无效（验证码/密码/Refresh） |
+| 40120 | 需要 MFA 二次验证（data 含 `mfa_token`） |
 | 40310 | 应用无权限或凭证错误 |
 | 40400 | 资源不存在 |
 | 40910 | 账户冲突（已被其他用户绑定） |
@@ -470,13 +471,57 @@ otp:
   daily_limit_per_ip: 50
 ```
 
+## 7.6 MFA / TOTP
+
+1. 登录后：`POST /api/v1/auth/mfa/totp/setup` → 扫码绑定
+2. `POST /api/v1/auth/mfa/totp/enable`（body: `{ "code": "123456" }`）→ 返回一次性备份码
+3. 登录若返回 `code=40120`，携带 `data.mfa_token` 调用 `POST /api/v1/auth/mfa/complete`
+4. step-up 支持 `method=totp`：`POST /api/v1/auth/step-up` + `credential.code`
+5. 关闭：`POST /api/v1/auth/mfa/totp/disable`（需 `step_up_token`）
+6. 管理后台：用户「重置 MFA」→ `POST /api/v1/admin/users/:id/reset-mfa`
+
+## 7.7 Passkey / WebAuthn
+
+```text
+注册：POST /passkey/register/begin → 浏览器 create → POST /passkey/register/finish
+登录：POST /passkey/login/begin → 浏览器 get → POST /passkey/login/finish
+列表：GET  /passkeys
+吊销：DELETE /passkeys/:id
+```
+
+配置 `webauthn.rp_id` / `rp_origins` 与实际域名一致。
+
+## 7.8 账号合并
+
+绑定冲突 `40910` 时 `data.merge_available=true`：
+
+1. `POST /api/v1/auth/merge/start`：验证对方身份，拿到 `merge_token`
+2. `POST /api/v1/auth/merge/confirm`：合并 identities，保留当前 `user_id`，吊销源用户会话
+3. 管理：`POST /api/v1/admin/users/merge` `{ "target_user_id", "source_user_id" }`
+
+## 7.9 轻量风控
+
+```yaml
+risk:
+  lock_after_failures: 10
+  lock_window_sec: 900
+  lock_duration_sec: 900
+  require_mfa_on_new_device: true
+  alert_webhook_url: "https://hooks.example.com/uac"
+```
+
+- 连续失败锁定账号 / IP；Admin `POST /api/v1/admin/risk/unlock`
+- 新设备 + 已启用 MFA 时强制二次验证
+- 登录可传 `client.fingerprint` / Header `X-Device-Fingerprint`，写入 refresh 与已知设备
+- 发码日熔断与登录锁定会推送 `alert_webhook_url`
+
 ## 8. 验收清单
 
 - [ ] methods 返回与控制台配置一致
 - [ ] 验证码登录成功并拿到统一 Token 结构
 - [ ] 同一手机号二次登录 `user_id` 不变且 `is_new_user=false`
 - [ ] 错误验证码 / 过期 / 重放被拒绝
-- [ ] 绑定冲突返回 `40910`
+- [ ] 绑定冲突返回 `40910` 且含 merge 引导
 - [ ] 解绑唯一登录方式被拒绝
 - [ ] 应用 A 的 refresh 不能在应用 B 刷新成功
 - [ ] introspect 可支撑业务网关鉴权
@@ -484,6 +529,8 @@ otp:
 - [ ] 解绑/设密无 step_up_token 被拒
 - [ ] JWKS 可下载且与 access token 验签一致
 - [ ] 并发 refresh 仅一方成功；reuse 旧 refresh 吊销家族
+- [ ] 启用 MFA 后登录返回 40120，complete 后拿到 Token
+- [ ] 连续失败锁定后 Admin 可解锁
 
 ## 9. 联系与支持
 

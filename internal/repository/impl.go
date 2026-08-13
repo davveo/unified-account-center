@@ -118,6 +118,84 @@ func (r *credentialRepo) FindByUserID(ctx context.Context, userID string) (*mode
 	return &c, err
 }
 
+func (r *credentialRepo) Save(ctx context.Context, cred *model.Credential) error {
+	return r.db.WithContext(ctx).Save(cred).Error
+}
+
+func (r *credentialRepo) Ensure(ctx context.Context, userID string) (*model.Credential, error) {
+	c, err := r.FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if c != nil {
+		return c, nil
+	}
+	c = &model.Credential{UserID: userID}
+	if err := r.db.WithContext(ctx).Create(c).Error; err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+type webAuthnRepo struct{ db *gorm.DB }
+
+func NewWebAuthnRepo(db *gorm.DB) WebAuthnRepo { return &webAuthnRepo{db: db} }
+
+func (r *webAuthnRepo) Create(ctx context.Context, cred *model.WebAuthnCredential) error {
+	return r.db.WithContext(ctx).Create(cred).Error
+}
+
+func (r *webAuthnRepo) ListByUserID(ctx context.Context, userID string) ([]model.WebAuthnCredential, error) {
+	var list []model.WebAuthnCredential
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("id desc").Find(&list).Error
+	return list, err
+}
+
+func (r *webAuthnRepo) FindByCredentialID(ctx context.Context, credID string) (*model.WebAuthnCredential, error) {
+	var c model.WebAuthnCredential
+	err := r.db.WithContext(ctx).Where("credential_id = ?", credID).First(&c).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &c, err
+}
+
+func (r *webAuthnRepo) Update(ctx context.Context, cred *model.WebAuthnCredential) error {
+	return r.db.WithContext(ctx).Save(cred).Error
+}
+
+func (r *webAuthnRepo) Delete(ctx context.Context, id uint64, userID string) error {
+	return r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.WebAuthnCredential{}).Error
+}
+
+type knownDeviceRepo struct{ db *gorm.DB }
+
+func NewKnownDeviceRepo(db *gorm.DB) KnownDeviceRepo { return &knownDeviceRepo{db: db} }
+
+func (r *knownDeviceRepo) Upsert(ctx context.Context, d *model.KnownDevice) error {
+	var existing model.KnownDevice
+	err := r.db.WithContext(ctx).Where("user_id = ? AND client_id = ? AND device_id = ?", d.UserID, d.ClientID, d.DeviceID).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return r.db.WithContext(ctx).Create(d).Error
+	}
+	if err != nil {
+		return err
+	}
+	existing.Fingerprint = d.Fingerprint
+	existing.IP = d.IP
+	existing.UA = d.UA
+	return r.db.WithContext(ctx).Save(&existing).Error
+}
+
+func (r *knownDeviceRepo) Find(ctx context.Context, userID, clientID, deviceID string) (*model.KnownDevice, error) {
+	var d model.KnownDevice
+	err := r.db.WithContext(ctx).Where("user_id = ? AND client_id = ? AND device_id = ?", userID, clientID, deviceID).First(&d).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &d, err
+}
+
 type challengeRepo struct{ db *gorm.DB }
 
 func NewChallengeRepo(db *gorm.DB) ChallengeRepo { return &challengeRepo{db: db} }

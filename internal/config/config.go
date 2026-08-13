@@ -22,7 +22,23 @@ type Config struct {
 	SMS       SMSConfig       `yaml:"sms"`
 	Email     EmailConfig     `yaml:"email"`
 	OAuth     OAuthConfig     `yaml:"oauth"`
+	Risk      RiskConfig      `yaml:"risk"`
+	WebAuthn  WebAuthnConfig  `yaml:"webauthn"`
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
+}
+
+type RiskConfig struct {
+	LockAfterFailures      int    `yaml:"lock_after_failures"`       // 连续失败锁定阈值，0=10
+	LockWindowSec          int    `yaml:"lock_window_sec"`           // 失败计数窗口，0=900
+	LockDurationSec        int    `yaml:"lock_duration_sec"`         // 锁定时长，0=900
+	RequireMFAOnNewDevice  bool   `yaml:"require_mfa_on_new_device"` // 新设备强制 MFA（若已启用）
+	AlertWebhookURL        string `yaml:"alert_webhook_url"`         // 发码熔断等运营告警
+}
+
+type WebAuthnConfig struct {
+	RPDisplayName string   `yaml:"rp_display_name"`
+	RPID          string   `yaml:"rp_id"`          // localhost / example.com
+	RPOrigins     []string `yaml:"rp_origins"`     // https://app.example.com
 }
 
 type AdminConfig struct {
@@ -194,6 +210,24 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Database.MaxOpen == 0 {
 		c.Database.MaxOpen = 50
+	}
+	if c.Risk.LockAfterFailures == 0 {
+		c.Risk.LockAfterFailures = 10
+	}
+	if c.Risk.LockWindowSec == 0 {
+		c.Risk.LockWindowSec = 900
+	}
+	if c.Risk.LockDurationSec == 0 {
+		c.Risk.LockDurationSec = 900
+	}
+	if c.WebAuthn.RPDisplayName == "" {
+		c.WebAuthn.RPDisplayName = "Unified Account Center"
+	}
+	if c.WebAuthn.RPID == "" {
+		c.WebAuthn.RPID = "localhost"
+	}
+	if len(c.WebAuthn.RPOrigins) == 0 {
+		c.WebAuthn.RPOrigins = []string{"http://localhost:8080", "http://127.0.0.1:8080"}
 	}
 }
 

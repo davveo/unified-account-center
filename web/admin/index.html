@@ -98,6 +98,23 @@
           </div>
           <div id="usersTable" class="table-wrap">加载中…</div>
         </article>
+        <article class="panel" style="margin-top:16px;">
+          <h2>风控解锁</h2>
+          <form id="unlockRiskForm" class="form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+            <div>
+              <label>类型</label>
+              <select id="unlockKind" name="kind">
+                <option value="id">账号 identity</option>
+                <option value="ip">IP</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:180px;">
+              <label>Key</label>
+              <input id="unlockKey" name="key" required placeholder="手机号/邮箱 或 IP" />
+            </div>
+            <button type="submit" class="btn btn-primary">解除锁定</button>
+          </form>
+        </article>
       </section>
 
       <!-- Audits -->

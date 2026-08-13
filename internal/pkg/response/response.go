@@ -24,12 +24,16 @@ func OK(c *gin.Context, data interface{}) {
 }
 
 func Fail(c *gin.Context, code int, msg string) {
+	FailData(c, code, msg, nil)
+}
+
+func FailData(c *gin.Context, code int, msg string, data interface{}) {
 	if msg == "" {
 		msg = errcode.Message(code)
 	}
 	status := http.StatusOK
 	switch code {
-	case errcode.Unauthorized, errcode.InvalidCred:
+	case errcode.Unauthorized, errcode.InvalidCred, errcode.MFARequired:
 		status = http.StatusUnauthorized
 	case errcode.ForbiddenApp:
 		status = http.StatusForbidden
@@ -48,12 +52,13 @@ func Fail(c *gin.Context, code int, msg string) {
 		Code:      code,
 		Message:   msg,
 		RequestID: requestID(c),
+		Data:      data,
 	})
 }
 
 func FailErr(c *gin.Context, err error) {
 	if ae, ok := errcode.AsAppError(err); ok {
-		Fail(c, ae.Code, ae.Message)
+		FailData(c, ae.Code, ae.Message, ae.Data)
 		return
 	}
 	Fail(c, errcode.Internal, errcode.Message(errcode.Internal))

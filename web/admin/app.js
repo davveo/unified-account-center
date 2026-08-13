@@ -3,7 +3,7 @@
   const titles = {
     apps: ["应用凭证", "创建 / 停用应用，调整登录方式，轮换 client_secret"],
     channels: ["对接渠道", "查看中台已支持的登录方式与配置状态"],
-    users: ["用户管理", "禁用用户、强制下线"],
+    users: ["用户管理", "禁用/强退、重置 MFA、合并账号、风控解锁"],
     audits: ["审计日志", "查询登录 / 绑定 / 改密等操作记录"],
     playground: ["渠道测试", "用真实接口联调验证码 / 密码 / OAuth 登录"],
   };
@@ -225,6 +225,8 @@
             <button class="btn btn-ghost" data-uact="status" data-id="${escapeHtml(u.user_id)}" data-status="${escapeHtml(u.status)}">${u.status === "active" ? "禁用" : "启用"}</button>
             <button class="btn btn-ghost" data-uact="kick" data-id="${escapeHtml(u.user_id)}">强制下线</button>
             <button class="btn btn-ghost" data-uact="sessions" data-id="${escapeHtml(u.user_id)}">会话</button>
+            <button class="btn btn-ghost" data-uact="resetmfa" data-id="${escapeHtml(u.user_id)}">重置MFA</button>
+            <button class="btn btn-ghost" data-uact="merge" data-id="${escapeHtml(u.user_id)}">合并入</button>
           </td>
         </tr>`).join("")}</tbody></table>`;
       $("usersTable").querySelectorAll("button[data-uact]").forEach((btn) => {
@@ -240,6 +242,19 @@
               const items = data.items || [];
               alert(items.length ? items.map((s) => `${s.device_id || "-"} | ${s.ip} | ${s.jti}`).join("\n") : "无活跃会话");
               return;
+            } else if (btn.dataset.uact === "resetmfa") {
+              if (!confirm("确认重置该用户 MFA？")) return;
+              await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/reset-mfa`, { method: "POST", body: "{}" });
+              alert("已重置 MFA");
+              return;
+            } else if (btn.dataset.uact === "merge") {
+              const source = prompt("输入要并入当前用户的 source_user_id");
+              if (!source) return;
+              await api(`/api/v1/admin/users/merge`, {
+                method: "POST",
+                body: JSON.stringify({ target_user_id: btn.dataset.id, source_user_id: source }),
+              });
+              alert("合并完成");
             } else {
               await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/force-logout`, {
                 method: "POST", body: "{}",
@@ -344,6 +359,22 @@
   $("refreshApps").addEventListener("click", loadApps);
   $("refreshUsers")?.addEventListener("click", loadUsers);
   $("refreshAudits")?.addEventListener("click", loadAudits);
+  $("unlockRiskForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/v1/admin/risk/unlock", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: $("unlockKind").value,
+          key: $("unlockKey").value.trim(),
+        }),
+      });
+      alert("已解除锁定");
+      $("unlockKey").value = "";
+    } catch (err) {
+      alert(err.message);
+    }
+  });
   $("testMethod").addEventListener("change", onMethodChange);
 
   $("createAppForm").addEventListener("submit", async (e) => {

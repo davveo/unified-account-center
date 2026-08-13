@@ -11,6 +11,7 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/crypto"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
+	"github.com/davveo/unified-account-center/internal/pkg/redisx"
 	"github.com/davveo/unified-account-center/internal/repository"
 )
 
@@ -55,6 +56,14 @@ var allChannels = []ChannelInfo{
 		NeedChallenge: false,
 		Testable:      true,
 	},
+	{
+		Method:        model.MethodPasskey,
+		Name:          "Passkey / WebAuthn",
+		Category:      "webauthn",
+		Description:   "无密码通行密钥登录（需浏览器支持 WebAuthn）",
+		NeedChallenge: false,
+		Testable:      false,
+	},
 }
 
 type ChannelInfo struct {
@@ -72,10 +81,11 @@ type AdminService struct {
 	cfg      *config.Config
 	repos    *repository.Repos
 	oauthReg *oauth.Registry
+	redis    *redisx.Client
 }
 
-func NewAdminService(cfg *config.Config, repos *repository.Repos, oauthReg *oauth.Registry) *AdminService {
-	return &AdminService{cfg: cfg, repos: repos, oauthReg: oauthReg}
+func NewAdminService(cfg *config.Config, repos *repository.Repos, oauthReg *oauth.Registry, rdb *redisx.Client) *AdminService {
+	return &AdminService{cfg: cfg, repos: repos, oauthReg: oauthReg, redis: rdb}
 }
 
 type CreateAppRequest struct {
@@ -289,7 +299,7 @@ func toAppView(app *model.App) AppView {
 
 func isKnownMethod(m string) bool {
 	switch m {
-	case model.MethodPhoneOTP, model.MethodPhonePassword, model.MethodEmailOTP, model.MethodEmailPassword, model.MethodOAuth2:
+	case model.MethodPhoneOTP, model.MethodPhonePassword, model.MethodEmailOTP, model.MethodEmailPassword, model.MethodOAuth2, model.MethodPasskey:
 		return true
 	default:
 		return false

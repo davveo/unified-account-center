@@ -26,6 +26,21 @@ type IdentityRepo interface {
 type CredentialRepo interface {
 	UpsertPassword(ctx context.Context, userID, hash string) error
 	FindByUserID(ctx context.Context, userID string) (*model.Credential, error)
+	Save(ctx context.Context, cred *model.Credential) error
+	Ensure(ctx context.Context, userID string) (*model.Credential, error)
+}
+
+type WebAuthnRepo interface {
+	Create(ctx context.Context, cred *model.WebAuthnCredential) error
+	ListByUserID(ctx context.Context, userID string) ([]model.WebAuthnCredential, error)
+	FindByCredentialID(ctx context.Context, credID string) (*model.WebAuthnCredential, error)
+	Update(ctx context.Context, cred *model.WebAuthnCredential) error
+	Delete(ctx context.Context, id uint64, userID string) error
+}
+
+type KnownDeviceRepo interface {
+	Upsert(ctx context.Context, d *model.KnownDevice) error
+	Find(ctx context.Context, userID, clientID, deviceID string) (*model.KnownDevice, error)
 }
 
 type ChallengeRepo interface {
@@ -84,6 +99,8 @@ type Repos struct {
 	Refresh    RefreshTokenRepo
 	OAuth      OAuthAccountRepo
 	Audit      AuditRepo
+	WebAuthn   WebAuthnRepo
+	Device     KnownDeviceRepo
 }
 
 func NewRepos(db *gorm.DB) *Repos {
@@ -97,6 +114,8 @@ func NewRepos(db *gorm.DB) *Repos {
 		Refresh:    NewRefreshTokenRepo(db),
 		OAuth:      NewOAuthAccountRepo(db),
 		Audit:      NewAuditRepo(db),
+		WebAuthn:   NewWebAuthnRepo(db),
+		Device:     NewKnownDeviceRepo(db),
 	}
 }
 
@@ -112,5 +131,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.AuditLog{},
 		&model.AccessTokenBlacklist{},
 		&model.OAuthProviderRow{},
+		&model.WebAuthnCredential{},
+		&model.KnownDevice{},
 	)
 }

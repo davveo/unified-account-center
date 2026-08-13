@@ -1,7 +1,7 @@
 # Unified Account Center — 能力扩展 Todo
 
 > 基于当前已落地能力（验证码/密码/OAuth、绑定解绑、Token 轮换、管理后台、JWKS、step-up、healthz/metrics、SDK、对抗单测）与技术方案对照整理。
-> 状态：P0 已完成；P1–P3 待排期
+> 状态：P0 / P1 已完成；P2–P3 待排期
 
 ---
 
@@ -16,6 +16,7 @@
 - [x] /healthz、优雅退出、结构化日志、/metrics
 - [x] Go / TS 小 SDK、对抗性单测
 - [x] **P0**：托管登录、PKCE/微信企微、会话设备管理、发码日熔断
+- [x] **P1**：MFA/TOTP、Passkey、账号合并、轻量风控
 
 ---
 
@@ -28,6 +29,8 @@
 - [x] 支持主题 / Logo / 文案按应用配置
 - [x] 对接文档与 SDK helper（跳转 + 换码）
 
+
+
 ### 2. OAuth PKCE + 更多 Provider
 
 - [x] 公网客户端强制 PKCE（code_verifier / code_challenge）
@@ -35,12 +38,16 @@
 - [x] Provider 配置热插拔（admin 可改，无需发版）
 - [x] OAuth 绑定到已登录用户的完整联调用例
 
+
+
 ### 3. 会话 / 设备管理 API
 
 - [x] `GET /api/v1/auth/sessions` 列出当前用户设备会话
 - [x] `DELETE /api/v1/auth/sessions/:jti` 踢掉指定设备
 - [x] 登录响应回显 `device_id`；管理后台展示在线设备
 - [x] 用户侧「退出其他设备」能力
+
+
 
 ### 4. 真实 Captcha 适配器
 
@@ -51,38 +58,52 @@
 
 ---
 
+
+
 ## P1｜安全与账户体验
+
+
 
 ### 5. MFA / TOTP
 
-- [ ] 启用/绑定 TOTP（写满已预留的 `credentials.mfa_secret`）
-- [ ] 登录可选二因子；高风险操作强制 MFA
-- [ ] step-up 支持 `method=totp`
-- [ ] 备份恢复码（一次性）
+- [x] 启用/绑定 TOTP（写满已预留的 `credentials.mfa_secret`）
+- [x] 登录可选二因子；高风险操作强制 MFA
+- [x] step-up 支持 `method=totp`
+- [x] 备份恢复码（一次性）
+
+
 
 ### 6. Passkey / WebAuthn
 
-- [ ] 注册 / 登录 Passkey Authenticator 插件
-- [ ] 设备凭证列表与吊销
-- [ ] 与现有 challenge/login 状态机对齐
+- [x] 注册 / 登录 Passkey Authenticator 插件
+- [x] 设备凭证列表与吊销
+- [x] 与现有 challenge/login 状态机对齐
+
+
 
 ### 7. 账号合并（Identity Merge）
 
-- [ ] 绑定冲突（40910）引导合并流程
-- [ ] 验证双方身份 → 合并 identities → 保留目标 `user_id`
-- [ ] 合并后吊销被合并用户全部会话
-- [ ] 管理后台支持人工合并与审计
+- [x] 绑定冲突（40910）引导合并流程
+- [x] 验证双方身份 → 合并 identities → 保留目标 `user_id`
+- [x] 合并后吊销被合并用户全部会话
+- [x] 管理后台支持人工合并与审计
+
+
 
 ### 8. 轻量风控策略
 
-- [ ] 连续失败锁定（账号 / IP）
-- [ ] 异地 / 新设备触发二次验证
-- [ ] 设备指纹（可选）写入 refresh / audit
-- [ ] 短信成本熔断与运营告警 webhook
+- [x] 连续失败锁定（账号 / IP）
+- [x] 异地 / 新设备触发二次验证
+- [x] 设备指纹（可选）写入 refresh / audit
+- [x] 短信成本熔断与运营告警 webhook
 
 ---
 
+
+
 ## P2｜企业与多租户
+
+
 
 ### 9. 多租户运营面
 
@@ -91,6 +112,8 @@
 - [ ] 租户数据隔离策略与后台筛选强化
 - [ ] 租户维度审计与 metrics
 
+
+
 ### 10. 企业 SSO
 
 - [ ] OIDC Enterprise（按邮箱域名路由 IdP）
@@ -98,12 +121,16 @@
 - [ ] JIT 建用户与属性映射
 - [ ] 企业侧强制 SSO / 禁用本地密码策略
 
+
+
 ### 11. 邀请制注册
 
 - [ ] 邀请码 / 邮件邀请链路
 - [ ] `auto_register=false` 时的审批入驻
 - [ ] 管理员创建用户并下发初始凭证
 - [ ] 邀请过期、使用次数限制
+
+
 
 ### 12. 轻量 RBAC / Scope（可选）
 
@@ -114,7 +141,11 @@
 
 ---
 
+
+
 ## P3｜平台工程化
+
+
 
 ### 13. OpenAPI 与 OIDC Discovery
 
@@ -123,11 +154,15 @@
 - [ ] 标准 `userinfo` 端点
 - [ ] 网关对接示例更新
 
+
+
 ### 14. Webhook / 出站事件
 
 - [ ] 事件：`user.created` / `login.failed` / `identity.bound` / `user.disabled`
 - [ ] 签名校验、重试、死信
 - [ ] 管理后台配置 webhook URL
+
+
 
 ### 15. 密钥与轮换运营
 
@@ -136,12 +171,16 @@
 - [ ] 短信 / OAuth 密钥热更新
 - [ ] 密钥轮换操作审计
 
+
+
 ### 16. SDK 加深
 
 - [ ] Go/TS 本地 JWKS 验签中间件
 - [ ] 托管登录跳转 + code 换 token helper
 - [ ] Java SDK（服务端验票）
 - [ ] SDK 版本发布与 changelog
+
+
 
 ### 17. 可观测补强
 
@@ -152,17 +191,22 @@
 
 ---
 
+
+
 ## 建议落地批次
 
-| 批次 | 包含项 | 目标 | 状态 |
-|------|--------|------|------|
-| 下一迭代 | #1 托管登录页、#3 设备会话、#4 真实 captcha | 接入体验 + 防刷立刻可见 | ✅ 已完成（含 #2） |
-| 再下一迭代 | #5 TOTP MFA（#2 已并入 P0） | 二因子 | 待做 |
-| 中期 | #7 账号合并、#8 轻量风控 | 运营冲突与盗号治理 | 待做 |
-| 长期 | #9–#12 多租户/企业 SSO/邀请/RBAC | B 端与治理能力 | 待做 |
-| 持续 | #13–#17 工程化 | 可维护性与生态对接 | 待做 |
+
+| 批次    | 包含项                            | 目标            | 状态          |
+| ----- | ------------------------------ | ------------- | ----------- |
+| 下一迭代  | #1 托管登录页、#3 设备会话、#4 真实 captcha | 接入体验 + 防刷立刻可见 | ✅ 已完成（含 #2） |
+| 再下一迭代 | #5–#8 TOTP MFA / Passkey / 合并 / 风控 | 安全与账户体验     | ✅ 已完成          |
+| 中期    | #9–#12 多租户/企业 SSO/邀请/RBAC      | B 端与治理能力     | 待做          |
+| 长期    | #13–#17 工程化                    | 可维护性与生态对接     | 待做          |
+
 
 ---
+
+
 
 ## 优先三选一（若资源有限）
 
@@ -177,3 +221,10 @@ P0 入口速览：
 - 会话：`GET/DELETE /api/v1/auth/sessions...`
 - Captcha：`captcha.provider=mock|turnstile|recaptcha`
 - OAuth 热更新：`PUT /api/v1/admin/oauth-providers`
+
+P1 入口速览：
+
+- MFA：`POST /api/v1/auth/mfa/totp/setup|enable|disable`，登录补全 `POST /mfa/complete`
+- Passkey：`/passkey/register|login` + `GET/DELETE /passkeys`
+- 合并：`POST /merge/start|confirm`；Admin `POST /users/merge`
+- 风控：`risk.*` 配置；Admin `POST /risk/unlock`；重置 MFA `POST /users/:id/reset-mfa`

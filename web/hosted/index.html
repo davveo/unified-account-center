@@ -32,6 +32,12 @@
         <input type="hidden" id="captchaToken" />
         <button type="submit" class="btn primary" id="submitBtn">登录</button>
       </form>
+      <form id="mfaForm" class="form hidden">
+        <p class="sub">请输入身份验证器中的 6 位验证码，或一次性备份码</p>
+        <label>MFA 验证码</label>
+        <input id="mfaCode" inputmode="numeric" autocomplete="one-time-code" required />
+        <button type="submit" class="btn primary">完成验证</button>
+      </form>
       <div id="oauthBlock" class="oauth hidden"></div>
       <p id="err" class="err hidden"></p>
     </section>

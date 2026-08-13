@@ -25,6 +25,16 @@ type StepUpResult struct {
 }
 
 func (s *AuthService) StepUp(ctx context.Context, meta RequestMeta, userID string, dto StepUpDTO) (*StepUpResult, error) {
+	if dto.Method == model.MethodTOTP {
+		code := ""
+		if dto.Credential != nil {
+			code = dto.Credential["code"]
+			if code == "" {
+				code = dto.Credential["otp"]
+			}
+		}
+		return s.stepUpTOTP(ctx, meta, userID, code)
+	}
 	app, err := s.requireApp(ctx, meta.ClientID)
 	if err != nil {
 		return nil, err

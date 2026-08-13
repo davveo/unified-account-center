@@ -16,11 +16,18 @@
     errBox.classList.toggle("hidden", !msg);
   }
 
+  let mfaToken = "";
+
   async function api(path, opts = {}) {
     const headers = Object.assign({ "Content-Type": "application/json", "X-Client-Id": clientId }, opts.headers || {});
     const res = await fetch(path, Object.assign({}, opts, { headers }));
     const body = await res.json();
-    if (body.code !== 0) throw new Error(body.message || "请求失败");
+    if (body.code !== 0) {
+      const err = new Error(body.message || "请求失败");
+      err.code = body.code;
+      err.data = body.data;
+      throw err;
+    }
     return body.data;
   }
 
@@ -31,7 +38,45 @@
       phone_password: "手机密码",
       email_password: "邮箱密码",
       oauth2: "第三方",
+      passkey: "Passkey",
     })[m] || m;
+  }
+
+  async function finishWithLogin(login) {
+    if (!redirectURI) {
+      showErr("登录成功，但缺少 redirect_uri，无法回跳");
+      console.log(login);
+      return;
+    }
+    const token = login.token || {};
+    const issued = await api("/api/v1/auth/hosted/code", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token.access_token },
+      body: JSON.stringify({
+        redirect_uri: redirectURI,
+        state,
+        code_challenge: codeChallenge,
+        access_token: token.access_token,
+        refresh_token: token.refresh_token,
+        expire_in: token.expire_in,
+        refresh_expire_in: token.refresh_expire_in,
+        device_id: token.device_id || deviceId,
+        refresh_jti: token.refresh_jti,
+      }),
+    });
+    const u = new URL(issued.redirect_uri || redirectURI);
+    u.searchParams.set("code", issued.code);
+    if (issued.state || state) u.searchParams.set("state", issued.state || state);
+    location.href = u.toString();
+  }
+
+  function showMFA(token) {
+    mfaToken = token;
+    $("loginForm").classList.add("hidden");
+    $("oauthBlock").classList.add("hidden");
+    $("methodTabs").classList.add("hidden");
+    $("mfaForm").classList.remove("hidden");
+    $("mfaCode").focus();
   }
 
   function selectMethod(m) {
@@ -130,34 +175,33 @@
           method,
           identity: $("identity").value.trim(),
           credential,
-          client: { device_id: deviceId, platform: "web" },
+          client: { device_id: deviceId, platform: "web", fingerprint: deviceId },
         }),
       });
-      if (!redirectURI) {
-        showErr("登录成功，但缺少 redirect_uri，无法回跳");
-        console.log(login);
+      await finishWithLogin(login);
+    } catch (err) {
+      if (err.code === 40120 && err.data && err.data.mfa_token) {
+        showMFA(err.data.mfa_token);
+        showErr("需要二次验证");
         return;
       }
-      const token = login.token || {};
-      const issued = await api("/api/v1/auth/hosted/code", {
+      showErr(err.message);
+    }
+  };
+
+  $("mfaForm").onsubmit = async (e) => {
+    e.preventDefault();
+    showErr("");
+    try {
+      const login = await api("/api/v1/auth/mfa/complete", {
         method: "POST",
-        headers: { Authorization: "Bearer " + token.access_token },
         body: JSON.stringify({
-          redirect_uri: redirectURI,
-          state,
-          code_challenge: codeChallenge,
-          access_token: token.access_token,
-          refresh_token: token.refresh_token,
-          expire_in: token.expire_in,
-          refresh_expire_in: token.refresh_expire_in,
-          device_id: token.device_id || deviceId,
-          refresh_jti: token.refresh_jti,
+          mfa_token: mfaToken,
+          code: $("mfaCode").value.trim(),
+          client: { device_id: deviceId, platform: "web", fingerprint: deviceId },
         }),
       });
-      const u = new URL(issued.redirect_uri || redirectURI);
-      u.searchParams.set("code", issued.code);
-      if (issued.state || state) u.searchParams.set("state", issued.state || state);
-      location.href = u.toString();
+      await finishWithLogin(login);
     } catch (err) {
       showErr(err.message);
     }

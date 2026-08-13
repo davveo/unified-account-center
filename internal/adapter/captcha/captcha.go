@@ -82,7 +82,8 @@ func (t *Turnstile) Verify(ctx context.Context, token, ip string) error {
 	if ip != "" {
 		form.Set("remoteip", ip)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://challenges.cloudflare.com/turnstile/v0/siteverify", strings.NewReader(form.Encode()))
 	if err != nil {
 		return errcode.Wrap(errcode.Internal, "人机验证请求失败", err)
 	}
@@ -128,7 +129,8 @@ func (r *Recaptcha) Verify(ctx context.Context, token, ip string) error {
 	if ip != "" {
 		form.Set("remoteip", ip)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://www.google.com/recaptcha/api/siteverify", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://www.google.com/recaptcha/api/siteverify", strings.NewReader(form.Encode()))
 	if err != nil {
 		return errcode.Wrap(errcode.Internal, "人机验证请求失败", err)
 	}

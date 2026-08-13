@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/davveo/unified-account-center/internal/middleware"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
 	"github.com/davveo/unified-account-center/internal/pkg/response"
@@ -365,4 +367,176 @@ func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
 
 func (h *AuthHandler) Health(c *gin.Context) {
 	response.OK(c, gin.H{"status": "up"})
+}
+
+func (h *AuthHandler) MFAStatus(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	res, err := h.auth.MFAStatus(c.Request.Context(), uid.(string))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) MFASetup(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	res, err := h.auth.MFASetup(c.Request.Context(), h.meta(c), uid.(string))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) MFAEnable(c *gin.Context) {
+	var body struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	uid, _ := c.Get(middleware.CtxUserID)
+	res, err := h.auth.MFAEnable(c.Request.Context(), h.meta(c), uid.(string), body.Code)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) MFADisable(c *gin.Context) {
+	var body struct {
+		StepUpToken string `json:"step_up_token"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	uid, _ := c.Get(middleware.CtxUserID)
+	if err := h.auth.MFADisable(c.Request.Context(), h.meta(c), uid.(string), body.StepUpToken); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) MFAComplete(c *gin.Context) {
+	var dto service.MFACompleteDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.auth.MFAComplete(c.Request.Context(), h.meta(c), dto)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) PasskeyRegisterBegin(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	res, err := h.auth.PasskeyRegisterBegin(c.Request.Context(), h.meta(c), uid.(string))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) PasskeyRegisterFinish(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	sessionID := c.Query("session_id")
+	if sessionID == "" {
+		sessionID = c.GetHeader("X-WebAuthn-Session")
+	}
+	name := c.Query("name")
+	body, _ := c.GetRawData()
+	if err := h.auth.PasskeyRegisterFinish(c.Request.Context(), h.meta(c), uid.(string), sessionID, name, body); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) PasskeyLoginBegin(c *gin.Context) {
+	var body struct {
+		UserID string `json:"user_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.auth.PasskeyLoginBegin(c.Request.Context(), h.meta(c), body.UserID)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) PasskeyLoginFinish(c *gin.Context) {
+	sessionID := c.Query("session_id")
+	if sessionID == "" {
+		sessionID = c.GetHeader("X-WebAuthn-Session")
+	}
+	var client service.ClientInfo
+	_ = c.ShouldBindHeader(&client) // ignore
+	client.DeviceID = c.GetHeader("X-Device-Id")
+	client.Fingerprint = c.GetHeader("X-Device-Fingerprint")
+	body, _ := c.GetRawData()
+	res, err := h.auth.PasskeyLoginFinish(c.Request.Context(), h.meta(c), sessionID, body, client)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) ListPasskeys(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	list, err := h.auth.ListPasskeys(c.Request.Context(), uid.(string))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list})
+}
+
+func (h *AuthHandler) DeletePasskey(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	id64, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err := h.auth.DeletePasskey(c.Request.Context(), h.meta(c), uid.(string), id64); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) MergeStart(c *gin.Context) {
+	var dto service.MergeStartDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	uid, _ := c.Get(middleware.CtxUserID)
+	res, err := h.auth.MergeStart(c.Request.Context(), h.meta(c), uid.(string), dto)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) MergeConfirm(c *gin.Context) {
+	var dto service.MergeConfirmDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	uid, _ := c.Get(middleware.CtxUserID)
+	if err := h.auth.MergeConfirm(c.Request.Context(), h.meta(c), uid.(string), dto); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
 }

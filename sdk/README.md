@@ -29,3 +29,5 @@ Introspect / JWKS / Step-up / Hosted：
 - `hostedLoginURL({ redirectUri, state, codeChallenge })` → 跳转托管登录
 - `exchangeCode({ code, redirectUri, codeVerifier })` → 授权码换 Token
 - `listSessions(accessToken, refreshToken?)` → 设备会话
+- `mfaComplete({ mfa_token, code })` → MFA 登录补全
+- `mergeStart` / `mergeConfirm` → 账号合并

@@ -117,6 +117,9 @@ func NewRouter(d Deps) *gin.Engine {
 			pub.POST("/password/reset/confirm", d.AuthHandler.ResetConfirm)
 			pub.GET("/oauth/:provider/start", d.AuthHandler.OAuthStart)
 			pub.GET("/oauth/:provider/callback", d.AuthHandler.OAuthCallback)
+			pub.POST("/mfa/complete", d.AuthHandler.MFAComplete)
+			pub.POST("/passkey/login/begin", d.AuthHandler.PasskeyLoginBegin)
+			pub.POST("/passkey/login/finish", d.AuthHandler.PasskeyLoginFinish)
 		}
 
 		serverAPI := v1.Group("")
@@ -140,8 +143,17 @@ func NewRouter(d Deps) *gin.Engine {
 			user.GET("/sessions", d.AuthHandler.ListSessions)
 			user.DELETE("/sessions/:jti", d.AuthHandler.RevokeSession)
 			user.POST("/sessions/revoke-others", d.AuthHandler.RevokeOtherSessions)
-			// 已登录发起 OAuth 绑定
 			user.GET("/oauth/:provider/bind-start", d.AuthHandler.OAuthStart)
+			user.GET("/mfa/status", d.AuthHandler.MFAStatus)
+			user.POST("/mfa/totp/setup", d.AuthHandler.MFASetup)
+			user.POST("/mfa/totp/enable", d.AuthHandler.MFAEnable)
+			user.POST("/mfa/totp/disable", d.AuthHandler.MFADisable)
+			user.POST("/passkey/register/begin", d.AuthHandler.PasskeyRegisterBegin)
+			user.POST("/passkey/register/finish", d.AuthHandler.PasskeyRegisterFinish)
+			user.GET("/passkeys", d.AuthHandler.ListPasskeys)
+			user.DELETE("/passkeys/:id", d.AuthHandler.DeletePasskey)
+			user.POST("/merge/start", d.AuthHandler.MergeStart)
+			user.POST("/merge/confirm", d.AuthHandler.MergeConfirm)
 		}
 	}
 
@@ -160,6 +172,9 @@ func NewRouter(d Deps) *gin.Engine {
 		adminAPI.POST("/users/:user_id/status", d.AdminHandler.SetUserStatus)
 		adminAPI.POST("/users/:user_id/force-logout", d.AdminHandler.ForceLogout)
 		adminAPI.GET("/users/:user_id/sessions", d.AdminHandler.ListUserSessions)
+		adminAPI.POST("/users/:user_id/reset-mfa", d.AdminHandler.ResetMFA)
+		adminAPI.POST("/users/merge", d.AdminHandler.MergeUsers)
+		adminAPI.POST("/risk/unlock", d.AdminHandler.UnlockRisk)
 		adminAPI.GET("/audits", d.AdminHandler.ListAudits)
 	}
 
