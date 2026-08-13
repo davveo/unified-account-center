@@ -135,6 +135,34 @@
   color: #92400e;
 }
 
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e8f0;
+}
+.pager-info {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+.pager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+.pager-page {
+  min-width: 4.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
 .table-base {
   width: 100%;
   min-width: 720px;

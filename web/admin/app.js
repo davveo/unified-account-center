@@ -16,11 +16,74 @@
   const state = {
     channels: [],
     apps: [],
+    appsForSelect: [],
     revealedSecrets: {},
     session: null,
   };
 
+  const PAGE_SIZE = 10;
+  const pages = {
+    apps: 1,
+    users: 1,
+    audits: 1,
+    tenants: 1,
+    idps: 1,
+    invites: 1,
+    joins: 1,
+    roles: 1,
+  };
+
   const $ = (id) => document.getElementById(id);
+
+  function pageParams(key) {
+    const page = Math.max(1, pages[key] || 1);
+    const limit = PAGE_SIZE;
+    return { page, limit, offset: (page - 1) * limit };
+  }
+
+  function pagerHTML(key, total) {
+    const n = Number(total) || 0;
+    if (n <= 0) return "";
+    const page = Math.max(1, pages[key] || 1);
+    const totalPages = Math.max(1, Math.ceil(n / PAGE_SIZE));
+    if (page > totalPages) pages[key] = totalPages;
+    const cur = pages[key];
+    const from = (cur - 1) * PAGE_SIZE + 1;
+    const to = Math.min(cur * PAGE_SIZE, n);
+    return `<div class="pager" data-pager-key="${key}" data-total="${n}">
+      <div class="pager-info">显示 ${from}-${to} / 共 ${n} 条</div>
+      <div class="pager-actions">
+        <button type="button" class="btn btn-ghost btn-xs" data-pager-go="first" ${cur <= 1 ? "disabled" : ""}>首页</button>
+        <button type="button" class="btn btn-ghost btn-xs" data-pager-go="prev" ${cur <= 1 ? "disabled" : ""}>上一页</button>
+        <span class="pager-page">${cur} / ${totalPages}</span>
+        <button type="button" class="btn btn-ghost btn-xs" data-pager-go="next" ${cur >= totalPages ? "disabled" : ""}>下一页</button>
+        <button type="button" class="btn btn-ghost btn-xs" data-pager-go="last" ${cur >= totalPages ? "disabled" : ""}>末页</button>
+      </div>
+    </div>`;
+  }
+
+  function bindPager(container, key, reload) {
+    const bar = container.querySelector(`[data-pager-key="${key}"]`);
+    if (!bar) return;
+    const total = Number(bar.dataset.total || 0);
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    bar.querySelectorAll("[data-pager-go]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const go = btn.dataset.pagerGo;
+        if (go === "first") pages[key] = 1;
+        else if (go === "prev") pages[key] = Math.max(1, (pages[key] || 1) - 1);
+        else if (go === "next") pages[key] = Math.min(totalPages, (pages[key] || 1) + 1);
+        else if (go === "last") pages[key] = totalPages;
+        reload();
+      });
+    });
+  }
+
+  function withPager(bodyHTML, key, total, emptyHTML) {
+    const n = Number(total) || 0;
+    if (n <= 0) return emptyHTML || `<div class="text-sm text-mist">暂无数据</div>`;
+    return `${bodyHTML}${pagerHTML(key, n)}`;
+  }
 
   function loadSession() {
     try {
@@ -623,19 +686,40 @@
     </article>`;
   }
 
-  async function loadApps() {
+  async function loadApps({ reset } = {}) {
+    if (reset) pages.apps = 1;
     try {
-      const data = await api("/api/v1/admin/apps");
+      const { limit, offset } = pageParams("apps");
+      const data = await api(`/api/v1/admin/apps?limit=${limit}&offset=${offset}`);
       state.apps = data.items || [];
-      if (!state.apps.length) {
+      const total = data.total || state.apps.length;
+      if (!state.apps.length && total === 0) {
         $("appsTable").innerHTML = `<div class="text-sm text-mist">暂无应用，请先创建。</div>`;
         return;
       }
-      $("appsTable").innerHTML = `<div class="grid gap-3">${state.apps.map(renderAppCard).join("")}</div>`;
-      fillClientSelect();
+      if (!state.apps.length && total > 0) {
+        pages.apps = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadApps();
+      }
+      $("appsTable").innerHTML = withPager(
+        `<div class="grid gap-3">${state.apps.map(renderAppCard).join("")}</div>`,
+        "apps",
+        total
+      );
       bindAppCardEvents();
+      bindPager($("appsTable"), "apps", () => loadApps());
     } catch (e) {
       $("appsTable").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function loadAppsForSelect() {
+    try {
+      const data = await api("/api/v1/admin/apps?limit=200&offset=0");
+      state.appsForSelect = data.items || [];
+      fillClientSelect();
+    } catch (_) {
+      /* ignore */
     }
   }
 
@@ -763,12 +847,23 @@
     }
   }
 
-  async function loadUsers() {
+  async function loadUsers({ reset } = {}) {
+    if (reset) pages.users = 1;
     try {
       const q = encodeURIComponent($("userQuery").value.trim());
-      const data = await api(`/api/v1/admin/users?limit=50&q=${q}`);
+      const { limit, offset } = pageParams("users");
+      const data = await api(`/api/v1/admin/users?limit=${limit}&offset=${offset}&q=${q}`);
       const items = data.items || [];
-      $("usersTable").innerHTML = `<table class="table-base">
+      const total = data.total || items.length;
+      if (!items.length && total === 0) {
+        $("usersTable").innerHTML = `<div class="text-sm text-mist">暂无用户</div>`;
+        return;
+      }
+      if (!items.length && total > 0) {
+        pages.users = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadUsers();
+      }
+      $("usersTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base">
         <thead><tr><th>user_id</th><th>昵称</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>${items.map((u) => `<tr>
           <td class="font-mono text-xs">${escapeHtml(u.user_id)}</td>
@@ -783,8 +878,9 @@
               <button type="button" class="btn btn-ghost btn-xs" data-uact="merge" data-id="${escapeHtml(u.user_id)}">合并入</button>
             </div>
           </td>
-        </tr>`).join("")}</tbody></table>`;
+        </tr>`).join("")}</tbody></table></div>`, "users", total);
 
+      bindPager($("usersTable"), "users", () => loadUsers());
       $("usersTable").querySelectorAll("button[data-uact]").forEach((btn) => {
         btn.addEventListener("click", async () => {
           try {
@@ -861,11 +957,22 @@
     }
   }
 
-  async function loadAudits() {
+  async function loadAudits({ reset } = {}) {
+    if (reset) pages.audits = 1;
     try {
-      const data = await api(`/api/v1/admin/audits?limit=50&${auditQuery()}`);
+      const { limit, offset } = pageParams("audits");
+      const data = await api(`/api/v1/admin/audits?limit=${limit}&offset=${offset}&${auditQuery()}`);
       const items = data.items || [];
-      $("auditsTable").innerHTML = `<table class="table-base">
+      const total = data.total || items.length;
+      if (!items.length && total === 0) {
+        $("auditsTable").innerHTML = `<div class="text-sm text-mist">暂无审计记录</div>`;
+        return;
+      }
+      if (!items.length && total > 0) {
+        pages.audits = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadAudits();
+      }
+      $("auditsTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base">
         <thead><tr><th>时间</th><th>action</th><th>user</th><th>client</th><th>成功</th><th>detail</th></tr></thead>
         <tbody>${items.map((a) => `<tr>
           <td class="whitespace-nowrap text-xs">${escapeHtml(a.created_at)}</td>
@@ -874,17 +981,29 @@
           <td class="font-mono text-xs">${escapeHtml(a.client_id)}</td>
           <td>${a.success ? `<span class="badge badge-ok">Y</span>` : `<span class="badge badge-warn">N</span>`}</td>
           <td class="text-xs text-mist">${escapeHtml(a.detail)}</td>
-        </tr>`).join("")}</tbody></table>`;
+        </tr>`).join("")}</tbody></table></div>`, "audits", total);
+      bindPager($("auditsTable"), "audits", () => loadAudits());
     } catch (e) {
       $("auditsTable").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
     }
   }
 
-  async function loadTenants() {
+  async function loadTenants({ reset } = {}) {
+    if (reset) pages.tenants = 1;
     try {
-      const data = await api("/api/v1/admin/tenants?limit=50");
+      const { limit, offset } = pageParams("tenants");
+      const data = await api(`/api/v1/admin/tenants?limit=${limit}&offset=${offset}`);
       const items = data.items || [];
-      $("tenantsTable").innerHTML = items.length ? `<div class="grid gap-3">${items.map((t) => `
+      const total = data.total || items.length;
+      if (!items.length && total === 0) {
+        $("tenantsTable").innerHTML = `<div class="text-sm text-mist">暂无租户</div>`;
+        return;
+      }
+      if (!items.length && total > 0) {
+        pages.tenants = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadTenants();
+      }
+      $("tenantsTable").innerHTML = withPager(`<div class="grid gap-3">${items.map((t) => `
         <article class="rounded-xl border border-line bg-white p-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -898,7 +1017,8 @@
             </div>
             <button type="button" class="btn btn-ghost btn-xs" data-edit-tenant="${escapeHtml(t.tenant_id)}">编辑</button>
           </div>
-        </article>`).join("")}</div>` : `<div class="text-sm text-mist">暂无租户</div>`;
+        </article>`).join("")}</div>`, "tenants", total);
+      bindPager($("tenantsTable"), "tenants", () => loadTenants());
       $("tenantsTable").querySelectorAll("[data-edit-tenant]").forEach((btn) => {
         btn.onclick = async () => {
           const t = items.find((x) => x.tenant_id === btn.dataset.editTenant);
@@ -932,25 +1052,41 @@
     }
   }
 
-  async function loadIdPs() {
+  async function loadIdPs({ reset } = {}) {
+    if (reset) pages.idps = 1;
     try {
       const data = await api("/api/v1/admin/enterprise-idps");
-      const items = data.items || [];
-      $("idpTable").innerHTML = items.length ? `<table class="table-base"><thead><tr><th>域名</th><th>租户</th><th>Provider</th><th>JIT</th><th>操作</th></tr></thead>
+      const all = data.items || [];
+      const total = all.length;
+      const { offset, limit } = pageParams("idps");
+      if (total > 0 && offset >= total) {
+        pages.idps = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadIdPs();
+      }
+      const items = all.slice(offset, offset + limit);
+      $("idpTable").innerHTML = withPager(
+        items.length
+          ? `<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>域名</th><th>租户</th><th>Provider</th><th>JIT</th><th>操作</th></tr></thead>
         <tbody>${items.map((p) => `<tr>
           <td class="font-mono text-xs">${escapeHtml(p.domain)}</td>
           <td class="font-mono text-xs">${escapeHtml(p.tenant_id)}</td>
           <td>${escapeHtml(p.provider)}</td>
           <td>${p.jit_enabled ? "Y" : "N"}</td>
           <td><button type="button" class="btn btn-ghost btn-xs" data-del-idp="${p.id}">删除</button></td>
-        </tr>`).join("")}</tbody></table>` : `<div class="text-sm text-mist">暂无企业 IdP</div>`;
+        </tr>`).join("")}</tbody></table></div>`
+          : "",
+        "idps",
+        total,
+        `<div class="text-sm text-mist">暂无企业 IdP</div>`
+      );
+      bindPager($("idpTable"), "idps", () => loadIdPs());
       $("idpTable").querySelectorAll("[data-del-idp]").forEach((btn) => {
         btn.onclick = async () => {
           if (!(await uiConfirm("确认删除该 IdP？", { danger: true }))) return;
           try {
             await api(`/api/v1/admin/enterprise-idps/${btn.dataset.delIdp}`, { method: "DELETE" });
             toast("已删除");
-            loadIdPs();
+            loadIdPs({ reset: true });
           } catch (e) { uiAlert(e.message); }
         };
       });
@@ -959,11 +1095,22 @@
     }
   }
 
-  async function loadInvites() {
+  async function loadInvites({ reset } = {}) {
+    if (reset) pages.invites = 1;
     try {
-      const data = await api("/api/v1/admin/invites?limit=50");
+      const { limit, offset } = pageParams("invites");
+      const data = await api(`/api/v1/admin/invites?limit=${limit}&offset=${offset}`);
       const items = data.items || [];
-      $("invitesTable").innerHTML = items.length ? `<table class="table-base"><thead><tr><th>code</th><th>租户</th><th>用途</th><th>状态</th><th>操作</th></tr></thead>
+      const total = data.total || items.length;
+      if (!items.length && total === 0) {
+        $("invitesTable").innerHTML = `<div class="text-sm text-mist">暂无邀请</div>`;
+        return;
+      }
+      if (!items.length && total > 0) {
+        pages.invites = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadInvites();
+      }
+      $("invitesTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>code</th><th>租户</th><th>用途</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>${items.map((i) => `<tr>
           <td class="font-mono text-xs">${escapeHtml(i.code)}</td>
           <td class="font-mono text-xs">${escapeHtml(i.tenant_id)}</td>
@@ -973,7 +1120,8 @@
             <button type="button" class="btn btn-ghost btn-xs" data-copy="${escapeHtml(i.code)}">复制</button>
             <button type="button" class="btn btn-ghost btn-xs" data-revoke-inv="${escapeHtml(i.code)}" ${i.status !== "active" ? "disabled" : ""}>吊销</button>
           </td>
-        </tr>`).join("")}</tbody></table>` : `<div class="text-sm text-mist">暂无邀请</div>`;
+        </tr>`).join("")}</tbody></table></div>`, "invites", total);
+      bindPager($("invitesTable"), "invites", () => loadInvites());
       $("invitesTable").querySelectorAll("[data-copy]").forEach((btn) => {
         btn.onclick = async () => toast((await copyText(btn.dataset.copy)) ? "已复制" : "复制失败", "ok");
       });
@@ -992,11 +1140,22 @@
     }
   }
 
-  async function loadJoins() {
+  async function loadJoins({ reset } = {}) {
+    if (reset) pages.joins = 1;
     try {
-      const data = await api("/api/v1/admin/join-requests?status=pending&limit=50");
+      const { limit, offset } = pageParams("joins");
+      const data = await api(`/api/v1/admin/join-requests?status=pending&limit=${limit}&offset=${offset}`);
       const items = data.items || [];
-      $("joinsTable").innerHTML = items.length ? `<table class="table-base"><thead><tr><th>request</th><th>身份</th><th>租户</th><th>时间</th><th>操作</th></tr></thead>
+      const total = data.total || items.length;
+      if (!items.length && total === 0) {
+        $("joinsTable").innerHTML = `<div class="text-sm text-mist">暂无待审批申请</div>`;
+        return;
+      }
+      if (!items.length && total > 0) {
+        pages.joins = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadJoins();
+      }
+      $("joinsTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>request</th><th>身份</th><th>租户</th><th>时间</th><th>操作</th></tr></thead>
         <tbody>${items.map((j) => `<tr>
           <td class="font-mono text-xs">${escapeHtml(j.request_id)}</td>
           <td>${escapeHtml(j.identity)}</td>
@@ -1006,7 +1165,8 @@
             <button type="button" class="btn btn-primary btn-xs" data-join="approve" data-id="${escapeHtml(j.request_id)}">通过</button>
             <button type="button" class="btn btn-ghost btn-xs" data-join="reject" data-id="${escapeHtml(j.request_id)}">拒绝</button>
           </td>
-        </tr>`).join("")}</tbody></table>` : `<div class="text-sm text-mist">暂无待审批申请</div>`;
+        </tr>`).join("")}</tbody></table></div>`, "joins", total);
+      bindPager($("joinsTable"), "joins", () => loadJoins());
       $("joinsTable").querySelectorAll("[data-join]").forEach((btn) => {
         btn.onclick = async () => {
           try {
@@ -1014,7 +1174,7 @@
               method: "POST", body: JSON.stringify({ decision: btn.dataset.join }),
             });
             toast(btn.dataset.join === "approve" ? "已通过" : "已拒绝");
-            loadJoins();
+            loadJoins({ reset: true });
           } catch (e) { uiAlert(e.message); }
         };
       });
@@ -1023,17 +1183,29 @@
     }
   }
 
-  async function loadRoles() {
+  async function loadRoles({ reset } = {}) {
+    if (reset) pages.roles = 1;
     try {
-      const data = await api("/api/v1/admin/roles?limit=100");
+      const { limit, offset } = pageParams("roles");
+      const data = await api(`/api/v1/admin/roles?limit=${limit}&offset=${offset}`);
       const items = data.items || [];
-      $("rolesTable").innerHTML = items.length ? `<table class="table-base"><thead><tr><th>user_id</th><th>tenant</th><th>role</th><th>操作</th></tr></thead>
+      const total = data.total || items.length;
+      if (!items.length && total === 0) {
+        $("rolesTable").innerHTML = `<div class="text-sm text-mist">暂无角色绑定</div>`;
+        return;
+      }
+      if (!items.length && total > 0) {
+        pages.roles = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        return loadRoles();
+      }
+      $("rolesTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>user_id</th><th>tenant</th><th>role</th><th>操作</th></tr></thead>
         <tbody>${items.map((r) => `<tr>
           <td class="font-mono text-xs">${escapeHtml(r.user_id)}</td>
           <td class="font-mono text-xs">${escapeHtml(r.tenant_id || "(platform)")}</td>
           <td><span class="badge badge-ok">${escapeHtml(r.role)}</span></td>
           <td><button type="button" class="btn btn-ghost btn-xs" data-revoke-role data-user="${escapeHtml(r.user_id)}" data-tenant="${escapeHtml(r.tenant_id || "")}" data-role="${escapeHtml(r.role)}">移除</button></td>
-        </tr>`).join("")}</tbody></table>` : `<div class="text-sm text-mist">暂无角色绑定</div>`;
+        </tr>`).join("")}</tbody></table></div>`, "roles", total);
+      bindPager($("rolesTable"), "roles", () => loadRoles());
       $("rolesTable").querySelectorAll("[data-revoke-role]").forEach((btn) => {
         btn.onclick = async () => {
           if (!(await uiConfirm("确认移除该角色？", { danger: true }))) return;
@@ -1043,7 +1215,7 @@
               body: JSON.stringify({ user_id: btn.dataset.user, tenant_id: btn.dataset.tenant, role: btn.dataset.role }),
             });
             toast("已移除");
-            loadRoles();
+            loadRoles({ reset: true });
           } catch (e) { uiAlert(e.message); }
         };
       });
@@ -1055,7 +1227,8 @@
   function fillClientSelect() {
     const sel = $("testClientId");
     const current = sel.value;
-    sel.innerHTML = state.apps
+    const list = (state.appsForSelect && state.appsForSelect.length) ? state.appsForSelect : state.apps;
+    sel.innerHTML = list
       .map((a) => `<option value="${escapeHtml(a.client_id)}">${escapeHtml(a.name)} (${escapeHtml(a.client_id)})</option>`)
       .join("");
     if (current) sel.value = current;
@@ -1071,8 +1244,7 @@
       fillMethodSelect();
       onMethodChange();
     }
-    if (!state.apps.length) loadApps();
-    else fillClientSelect();
+    loadAppsForSelect();
   }
 
   function fillMethodSelect() {
@@ -1169,17 +1341,23 @@
     toast("已退出登录");
   });
 
-  $("refreshApps").addEventListener("click", loadApps);
-  $("refreshUsers")?.addEventListener("click", loadUsers);
-  $("refreshAudits")?.addEventListener("click", loadAudits);
+  $("refreshApps").addEventListener("click", () => loadApps({ reset: true }));
+  $("refreshUsers")?.addEventListener("click", () => loadUsers({ reset: true }));
+  $("userQuery")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadUsers({ reset: true });
+    }
+  });
+  $("refreshAudits")?.addEventListener("click", () => loadAudits({ reset: true }));
   $("exportAudits")?.addEventListener("click", () => exportAudits(false));
   $("persistAudits")?.addEventListener("click", () => exportAudits(true));
   $("refreshDashboard")?.addEventListener("click", loadDashboard);
   $("refreshSMS")?.addEventListener("click", loadSMSChannel);
-  $("refreshTenants")?.addEventListener("click", () => { loadTenants(); loadIdPs(); });
-  $("refreshInvites")?.addEventListener("click", loadInvites);
-  $("refreshJoins")?.addEventListener("click", loadJoins);
-  $("refreshRoles")?.addEventListener("click", loadRoles);
+  $("refreshTenants")?.addEventListener("click", () => { loadTenants({ reset: true }); loadIdPs({ reset: true }); });
+  $("refreshInvites")?.addEventListener("click", () => loadInvites({ reset: true }));
+  $("refreshJoins")?.addEventListener("click", () => loadJoins({ reset: true }));
+  $("refreshRoles")?.addEventListener("click", () => loadRoles({ reset: true }));
 
   $("btnCreateTenant")?.addEventListener("click", async () => {
     const values = await uiForm("新建租户", [
@@ -1200,7 +1378,7 @@
         }),
       });
       toast("租户已创建");
-      loadTenants();
+      loadTenants({ reset: true });
     } catch (e) { uiAlert(e.message); }
   });
 
@@ -1220,7 +1398,7 @@
         }),
       });
       toast("IdP 已保存");
-      loadIdPs();
+      loadIdPs({ reset: true });
     } catch (e) { uiAlert(e.message); }
   });
 
@@ -1245,7 +1423,7 @@
         }),
       });
       await uiAlert(`邀请码：${data.code}`, { title: "创建成功", mono: true });
-      loadInvites();
+      loadInvites({ reset: true });
     } catch (e) { uiAlert(e.message); }
   });
 
@@ -1290,7 +1468,7 @@
         body: JSON.stringify(values),
       });
       toast("角色已分配");
-      loadRoles();
+      loadRoles({ reset: true });
     } catch (e) { uiAlert(e.message); }
   });
 
@@ -1341,7 +1519,8 @@
       e.target.reset();
       renderMethodChecks();
       toast("应用创建成功");
-      loadApps();
+      loadApps({ reset: true });
+      loadAppsForSelect();
     } catch (err) {
       $("createResult").classList.remove("hidden");
       $("createResult").className = "result warn";
