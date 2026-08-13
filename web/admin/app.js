@@ -81,6 +81,17 @@
       const data = await api("/api/v1/admin/channels");
       state.channels = data.channels || [];
       renderMethodChecks();
+      let oauthHTML = "";
+      try {
+        const providers = await api("/api/v1/admin/oauth-providers");
+        const items = providers.items || [];
+        oauthHTML = `<div class="card" style="grid-column:1/-1">
+          <h3>OAuth Provider（可热更新）</h3>
+          <p class="muted">PUT /api/v1/admin/oauth-providers 写入后立即生效，无需发版。</p>
+          <div class="mono">${items.map((p) => `${p.name} [${p.kind||"generic"}] client_id=${p.client_id||"-"} enabled=${p.enabled}`).join("<br/>") || "暂无"}</div>
+          <button id="upsertOAuthBtn" class="btn btn-ghost" style="margin-top:8px">新增/更新 Provider</button>
+        </div>`;
+      } catch (_) {}
       $("channelsGrid").innerHTML = state.channels
         .map((ch) => {
           const status = ch.method === "oauth2"
@@ -99,7 +110,22 @@
             ${providers}
           </div>`;
         })
-        .join("");
+        .join("") + oauthHTML;
+      const btn = $("upsertOAuthBtn");
+      if (btn) {
+        btn.onclick = async () => {
+          const name = prompt("provider name（如 wechat / github）");
+          if (!name) return;
+          const kind = prompt("kind: generic | wechat | wecom", name === "wechat" ? "wechat" : "generic") || "generic";
+          const clientId = prompt("client_id / appid / corpid") || "";
+          const secret = prompt("client_secret（可空表示不改）") || "";
+          await api("/api/v1/admin/oauth-providers", {
+            method: "PUT",
+            body: JSON.stringify({ name, kind, client_id: clientId, client_secret: secret, enabled: true }),
+          });
+          loadChannels();
+        };
+      }
     } catch (e) {
       $("channelsGrid").innerHTML = `<div class="result warn">${e.message}</div>`;
     }
@@ -128,7 +154,9 @@
               <td>
                 <button class="btn btn-ghost" data-act="toggle" data-id="${escapeHtml(a.client_id)}" data-status="${escapeHtml(a.status)}">${a.status === "active" ? "停用" : "启用"}</button>
                 <button class="btn btn-ghost" data-act="methods" data-id="${escapeHtml(a.client_id)}">改方式</button>
+                <button class="btn btn-ghost" data-act="brand" data-id="${escapeHtml(a.client_id)}">主题</button>
                 <button class="btn btn-ghost" data-act="rotate" data-id="${escapeHtml(a.client_id)}">轮换密钥</button>
+                <a class="btn btn-ghost" href="/login?client_id=${encodeURIComponent(a.client_id)}&redirect_uri=${encodeURIComponent((a.redirect_uris||[])[0]||'')}" target="_blank">托管登录</a>
               </td>
             </tr>`
             )
@@ -161,6 +189,17 @@
           body: JSON.stringify({ allowed_methods: raw.split(",").map((s) => s.trim()).filter(Boolean) }),
         });
         loadApps();
+      } else if (act === "brand") {
+        const title = prompt("登录页标题", "欢迎登录");
+        if (title == null) return;
+        const logo = prompt("Logo URL（可空）", "") || "";
+        const color = prompt("主题色", "#1f6feb") || "#1f6feb";
+        const pkce = confirm("是否强制 PKCE？");
+        await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ login_title: title, logo_url: logo, theme_color: color, require_pkce: pkce }),
+        });
+        loadApps();
       } else if (act === "rotate") {
         if (!confirm("确认轮换密钥？旧 secret 立即失效。")) return;
         const data = await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}/rotate-secret`, { method: "POST", body: "{}" });
@@ -185,6 +224,7 @@
           <td>
             <button class="btn btn-ghost" data-uact="status" data-id="${escapeHtml(u.user_id)}" data-status="${escapeHtml(u.status)}">${u.status === "active" ? "禁用" : "启用"}</button>
             <button class="btn btn-ghost" data-uact="kick" data-id="${escapeHtml(u.user_id)}">强制下线</button>
+            <button class="btn btn-ghost" data-uact="sessions" data-id="${escapeHtml(u.user_id)}">会话</button>
           </td>
         </tr>`).join("")}</tbody></table>`;
       $("usersTable").querySelectorAll("button[data-uact]").forEach((btn) => {
@@ -195,6 +235,11 @@
               await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/status`, {
                 method: "POST", body: JSON.stringify({ status: next }),
               });
+            } else if (btn.dataset.uact === "sessions") {
+              const data = await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/sessions`);
+              const items = data.items || [];
+              alert(items.length ? items.map((s) => `${s.device_id || "-"} | ${s.ip} | ${s.jti}`).join("\n") : "无活跃会话");
+              return;
             } else {
               await api(`/api/v1/admin/users/${encodeURIComponent(btn.dataset.id)}/force-logout`, {
                 method: "POST", body: "{}",

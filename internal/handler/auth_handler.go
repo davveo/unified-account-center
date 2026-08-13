@@ -230,6 +230,10 @@ func (h *AuthHandler) Introspect(c *gin.Context) {
 
 func (h *AuthHandler) OAuthStart(c *gin.Context) {
 	provider := c.Param("provider")
+	bindUserID := ""
+	if uid, ok := c.Get(middleware.CtxUserID); ok {
+		bindUserID, _ = uid.(string)
+	}
 	res, err := h.oauth.Start(
 		c.Request.Context(),
 		h.meta(c).ClientID,
@@ -237,6 +241,7 @@ func (h *AuthHandler) OAuthStart(c *gin.Context) {
 		c.Query("redirect_uri"),
 		c.Query("state"),
 		c.Query("code_challenge"),
+		bindUserID,
 	)
 	if err != nil {
 		response.FailErr(c, err)
@@ -246,7 +251,6 @@ func (h *AuthHandler) OAuthStart(c *gin.Context) {
 }
 
 func (h *AuthHandler) OAuthCallback(c *gin.Context) {
-	// 中台回调入口：将 code/state 回传给应用（托管模式简化实现）
 	provider := c.Param("provider")
 	code := c.Query("code")
 	state := c.Query("state")
@@ -254,8 +258,109 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		"provider": provider,
 		"code":     code,
 		"state":    state,
-		"hint":     "请使用 POST /api/v1/auth/login method=oauth2 完成登录",
+		"hint":     "请使用 POST /api/v1/auth/login 或 /identities/bind method=oauth2 完成",
 	})
+}
+
+func (h *AuthHandler) HostedConfig(c *gin.Context) {
+	clientID := c.Query("client_id")
+	if clientID == "" {
+		clientID = c.GetHeader("X-Client-Id")
+	}
+	res, err := h.auth.HostedConfig(c.Request.Context(), clientID)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) IssueHostedCode(c *gin.Context) {
+	var body struct {
+		RedirectURI     string `json:"redirect_uri" binding:"required"`
+		State           string `json:"state"`
+		CodeChallenge   string `json:"code_challenge"`
+		AccessToken     string `json:"access_token" binding:"required"`
+		RefreshToken    string `json:"refresh_token" binding:"required"`
+		ExpireIn        int64  `json:"expire_in"`
+		RefreshExpireIn int64  `json:"refresh_expire_in"`
+		DeviceID        string `json:"device_id"`
+		RefreshJTI      string `json:"refresh_jti"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	tok := service.TokenDTO{
+		AccessToken: body.AccessToken, TokenType: "Bearer",
+		ExpireIn: body.ExpireIn, RefreshToken: body.RefreshToken,
+		RefreshExpireIn: body.RefreshExpireIn, DeviceID: body.DeviceID, RefreshJTI: body.RefreshJTI,
+	}
+	res, err := h.auth.IssueHostedCode(c.Request.Context(), h.meta(c), uid, tok, body.DeviceID, service.IssueHostedCodeDTO{
+		RedirectURI: body.RedirectURI, State: body.State, CodeChallenge: body.CodeChallenge,
+	})
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) ExchangeToken(c *gin.Context) {
+	var dto service.ExchangeTokenDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.auth.ExchangeToken(c.Request.Context(), h.meta(c), dto)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) ListSessions(c *gin.Context) {
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	keep := h.auth.ResolveRefreshJTI(c.Request.Context(), c.Query("refresh_token"))
+	list, err := h.auth.ListSessions(c.Request.Context(), h.meta(c), uid, keep)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list})
+}
+
+func (h *AuthHandler) RevokeSession(c *gin.Context) {
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	if err := h.auth.RevokeSession(c.Request.Context(), h.meta(c), uid, c.Param("jti")); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AuthHandler) RevokeOtherSessions(c *gin.Context) {
+	var body struct {
+		RefreshToken string `json:"refresh_token"`
+		KeepJTI      string `json:"keep_jti"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	keep := body.KeepJTI
+	if keep == "" {
+		keep = h.auth.ResolveRefreshJTI(c.Request.Context(), body.RefreshToken)
+	}
+	if err := h.auth.RevokeOtherSessions(c.Request.Context(), h.meta(c), uid, keep); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
 }
 
 func (h *AuthHandler) Health(c *gin.Context) {

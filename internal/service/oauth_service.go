@@ -29,14 +29,15 @@ type OAuthStartResult struct {
 	State        string `json:"state"`
 }
 
-type oauthStatePayload struct {
+type OAuthStatePayload struct {
 	ClientID      string `json:"client_id"`
 	Provider      string `json:"provider"`
 	RedirectURI   string `json:"redirect_uri"`
 	CodeChallenge string `json:"code_challenge,omitempty"`
+	BindUserID    string `json:"bind_user_id,omitempty"` // 已登录绑定场景
 }
 
-func (s *OAuthService) Start(ctx context.Context, clientID, provider, redirectURI, state, codeChallenge string) (*OAuthStartResult, error) {
+func (s *OAuthService) Start(ctx context.Context, clientID, provider, redirectURI, state, codeChallenge, bindUserID string) (*OAuthStartResult, error) {
 	app, err := s.auth.requireApp(ctx, clientID)
 	if err != nil {
 		return nil, err
@@ -50,6 +51,9 @@ func (s *OAuthService) Start(ctx context.Context, clientID, provider, redirectUR
 	if !redirectAllowed(app.RedirectURIs, redirectURI) {
 		return nil, errcode.New(errcode.BadRequest, "redirect_uri 不在白名单")
 	}
+	if app.RequirePKCE && codeChallenge == "" {
+		return nil, errcode.New(errcode.BadRequest, "应用要求 PKCE，缺少 code_challenge")
+	}
 	p, ok := s.registry.Get(provider)
 	if !ok {
 		return nil, errcode.New(errcode.BadRequest, "不支持的 provider")
@@ -57,11 +61,12 @@ func (s *OAuthService) Start(ctx context.Context, clientID, provider, redirectUR
 	if state == "" {
 		state = idgen.RandomHex(16)
 	}
-	payload := oauthStatePayload{
+	payload := OAuthStatePayload{
 		ClientID:      clientID,
 		Provider:      provider,
 		RedirectURI:   redirectURI,
 		CodeChallenge: codeChallenge,
+		BindUserID:    bindUserID,
 	}
 	if err := s.redis.SetJSON(ctx, oauthStateKey(state), payload, oauthStateTTL); err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "保存 OAuth state 失败", err)
@@ -72,29 +77,29 @@ func (s *OAuthService) Start(ctx context.Context, clientID, provider, redirectUR
 	}, nil
 }
 
-// ConsumeState 一次性校验并消费 state，返回登录时必须对齐的 redirect_uri / provider。
-func (s *OAuthService) ConsumeState(ctx context.Context, clientID, provider, state, redirectURI string) error {
+// ConsumeState 一次性校验并消费 state。
+func (s *OAuthService) ConsumeState(ctx context.Context, clientID, provider, state, redirectURI string) (*OAuthStatePayload, error) {
 	if state == "" {
-		return errcode.New(errcode.BadRequest, "缺少 state")
+		return nil, errcode.New(errcode.BadRequest, "缺少 state")
 	}
-	var payload oauthStatePayload
+	var payload OAuthStatePayload
 	ok, err := s.redis.GetDelJSON(ctx, oauthStateKey(state), &payload)
 	if err != nil {
-		return errcode.Wrap(errcode.Internal, "读取 OAuth state 失败", err)
+		return nil, errcode.Wrap(errcode.Internal, "读取 OAuth state 失败", err)
 	}
 	if !ok {
-		return errcode.New(errcode.InvalidCred, "state 无效或已过期")
+		return nil, errcode.New(errcode.InvalidCred, "state 无效或已过期")
 	}
 	if payload.ClientID != clientID {
-		return errcode.New(errcode.InvalidCred, "state 与应用不匹配")
+		return nil, errcode.New(errcode.InvalidCred, "state 与应用不匹配")
 	}
 	if payload.Provider != provider {
-		return errcode.New(errcode.InvalidCred, "state 与 provider 不匹配")
+		return nil, errcode.New(errcode.InvalidCred, "state 与 provider 不匹配")
 	}
 	if payload.RedirectURI != redirectURI {
-		return errcode.New(errcode.InvalidCred, "redirect_uri 与授权时不一致")
+		return nil, errcode.New(errcode.InvalidCred, "redirect_uri 与授权时不一致")
 	}
-	return nil
+	return &payload, nil
 }
 
 func oauthStateKey(state string) string {

@@ -430,6 +430,46 @@ UI：`/admin/` → 应用凭证 / 用户管理 / 审计日志。
 - `GET /metrics`：Prometheus 文本指标
 - 进程收到 SIGINT/SIGTERM 后优雅退出
 
+## 7.3 托管登录（Hosted Login）
+
+1. 浏览器打开：
+   ```
+   /login?client_id=app_demo&redirect_uri=https://app.example.com/callback&state=xyz&code_challenge=...
+   ```
+2. 用户完成登录后，中台回跳：
+   ```
+   https://app.example.com/callback?code=ac_xxx&state=xyz
+   ```
+3. 业务服务端换 Token（需 `X-Client-Secret`）：
+   ```http
+   POST /api/v1/auth/token
+   X-Client-Id: app_demo
+   X-Client-Secret: ***
+   {"grant_type":"authorization_code","code":"ac_xxx","redirect_uri":"https://app.example.com/callback","code_verifier":"..."}
+   ```
+
+应用可配置 `login_title` / `logo_url` / `theme_color` / `require_pkce`（管理后台「主题」或 `PATCH /api/v1/admin/apps/:id`）。
+
+## 7.4 会话管理
+
+- `GET /api/v1/auth/sessions`：当前应用下活跃设备
+- `DELETE /api/v1/auth/sessions/:jti`：踢掉指定设备
+- `POST /api/v1/auth/sessions/revoke-others`：退出其他设备（保留当前 `keep_jti` / `refresh_token`）
+- 登录响应 `token.device_id` / `token.refresh_jti`
+
+## 7.5 Captcha 与发码熔断
+
+```yaml
+captcha:
+  enabled: true
+  provider: turnstile # mock | turnstile | recaptcha
+  site_key: "..."
+  secret_key: "..."
+otp:
+  daily_limit_per_identity: 20
+  daily_limit_per_ip: 50
+```
+
 ## 8. 验收清单
 
 - [ ] methods 返回与控制台配置一致

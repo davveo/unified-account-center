@@ -78,6 +78,24 @@ func (c *Client) SetJSON(ctx context.Context, key string, v interface{}, ttl tim
 	return c.rdb.Set(ctx, key, b, ttl).Err()
 }
 
+func (c *Client) GetJSON(ctx context.Context, key string, dest interface{}) (bool, error) {
+	val, err := c.rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal([]byte(val), dest); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *Client) Del(ctx context.Context, key string) error {
+	return c.rdb.Del(ctx, key).Err()
+}
+
 // GetDelJSON 读取并删除（一次性消费）。
 func (c *Client) GetDelJSON(ctx context.Context, key string, dest interface{}) (bool, error) {
 	val, err := c.rdb.GetDel(ctx, key).Result()

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/davveo/unified-account-center/internal/adapter"
@@ -111,6 +112,216 @@ func (p *GenericProvider) Exchange(ctx context.Context, code, redirectURI, codeV
 	return info, nil
 }
 
+// WeChatProvider 微信开放平台网站应用扫码登录。
+type WeChatProvider struct {
+	name   string
+	cfg    config.OAuthProviderConfig
+	client *http.Client
+}
+
+func NewWeChat(name string, cfg config.OAuthProviderConfig) *WeChatProvider {
+	if cfg.AuthURL == "" {
+		cfg.AuthURL = "https://open.weixin.qq.com/connect/qrconnect"
+	}
+	if cfg.TokenURL == "" {
+		cfg.TokenURL = "https://api.weixin.qq.com/sns/oauth2/access_token"
+	}
+	if cfg.UserInfoURL == "" {
+		cfg.UserInfoURL = "https://api.weixin.qq.com/sns/userinfo"
+	}
+	if len(cfg.Scopes) == 0 {
+		cfg.Scopes = []string{"snsapi_login"}
+	}
+	return &WeChatProvider{name: name, cfg: cfg, client: &http.Client{Timeout: 15 * time.Second}}
+}
+
+func (p *WeChatProvider) Name() string { return p.name }
+
+func (p *WeChatProvider) AuthURL(state, redirectURI, codeChallenge string) string {
+	q := url.Values{}
+	q.Set("appid", p.cfg.ClientID)
+	q.Set("redirect_uri", redirectURI)
+	q.Set("response_type", "code")
+	q.Set("scope", strings.Join(p.cfg.Scopes, ","))
+	q.Set("state", state)
+	// 微信不支持标准 PKCE；codeChallenge 忽略，由中台侧托管授权码 PKCE 保护
+	_ = codeChallenge
+	return p.cfg.AuthURL + "?" + q.Encode() + "#wechat_redirect"
+}
+
+func (p *WeChatProvider) Exchange(ctx context.Context, code, redirectURI, codeVerifier string) (*adapter.OAuthUserInfo, error) {
+	_ = redirectURI
+	_ = codeVerifier
+	q := url.Values{}
+	q.Set("appid", p.cfg.ClientID)
+	q.Set("secret", p.cfg.ClientSecret)
+	q.Set("code", code)
+	q.Set("grant_type", "authorization_code")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.cfg.TokenURL+"?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var tokenResp struct {
+		AccessToken string `json:"access_token"`
+		OpenID      string `json:"openid"`
+		UnionID     string `json:"unionid"`
+		ErrCode     int    `json:"errcode"`
+		ErrMsg      string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, err
+	}
+	if tokenResp.ErrCode != 0 || tokenResp.AccessToken == "" {
+		return nil, fmt.Errorf("wechat token: %s", string(body))
+	}
+	uq := url.Values{}
+	uq.Set("access_token", tokenResp.AccessToken)
+	uq.Set("openid", tokenResp.OpenID)
+	ureq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.cfg.UserInfoURL+"?"+uq.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	uresp, err := p.client.Do(ureq)
+	if err != nil {
+		return nil, err
+	}
+	defer uresp.Body.Close()
+	ubody, _ := io.ReadAll(uresp.Body)
+	var u struct {
+		OpenID  string `json:"openid"`
+		UnionID string `json:"unionid"`
+		Nick    string `json:"nickname"`
+		Avatar  string `json:"headimgurl"`
+		ErrCode int    `json:"errcode"`
+	}
+	if err := json.Unmarshal(ubody, &u); err != nil {
+		return nil, err
+	}
+	if u.ErrCode != 0 {
+		return nil, fmt.Errorf("wechat userinfo: %s", string(ubody))
+	}
+	sub := u.UnionID
+	if sub == "" {
+		sub = u.OpenID
+	}
+	if sub == "" {
+		sub = tokenResp.UnionID
+	}
+	if sub == "" {
+		sub = tokenResp.OpenID
+	}
+	return &adapter.OAuthUserInfo{
+		Subject: sub,
+		Name:    u.Nick,
+		Avatar:  u.Avatar,
+		RawJSON: string(ubody),
+	}, nil
+}
+
+// WeComProvider 企业微信网页授权（简化：OAuth code 换 user_ticket/userinfo）。
+type WeComProvider struct {
+	name   string
+	cfg    config.OAuthProviderConfig
+	client *http.Client
+}
+
+func NewWeCom(name string, cfg config.OAuthProviderConfig) *WeComProvider {
+	if cfg.AuthURL == "" {
+		cfg.AuthURL = "https://open.weixin.qq.com/connect/oauth2/authorize"
+	}
+	if cfg.TokenURL == "" {
+		cfg.TokenURL = "https://qyapi.weixin.qq.com/cgi-bin/gettoken"
+	}
+	if cfg.UserInfoURL == "" {
+		cfg.UserInfoURL = "https://qyapi.weixin.qq.com/cgi-bin/user/getuserinfo"
+	}
+	if len(cfg.Scopes) == 0 {
+		cfg.Scopes = []string{"snsapi_base"}
+	}
+	return &WeComProvider{name: name, cfg: cfg, client: &http.Client{Timeout: 15 * time.Second}}
+}
+
+func (p *WeComProvider) Name() string { return p.name }
+
+func (p *WeComProvider) AuthURL(state, redirectURI, codeChallenge string) string {
+	_ = codeChallenge
+	q := url.Values{}
+	q.Set("appid", p.cfg.ClientID) // corpid
+	q.Set("redirect_uri", redirectURI)
+	q.Set("response_type", "code")
+	q.Set("scope", strings.Join(p.cfg.Scopes, ","))
+	q.Set("state", state)
+	return p.cfg.AuthURL + "?" + q.Encode() + "#wechat_redirect"
+}
+
+func (p *WeComProvider) Exchange(ctx context.Context, code, redirectURI, codeVerifier string) (*adapter.OAuthUserInfo, error) {
+	_ = redirectURI
+	_ = codeVerifier
+	// 1) corp access_token
+	tq := url.Values{}
+	tq.Set("corpid", p.cfg.ClientID)
+	tq.Set("corpsecret", p.cfg.ClientSecret)
+	treq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.cfg.TokenURL+"?"+tq.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	tresp, err := p.client.Do(treq)
+	if err != nil {
+		return nil, err
+	}
+	defer tresp.Body.Close()
+	tbody, _ := io.ReadAll(tresp.Body)
+	var tok struct {
+		AccessToken string `json:"access_token"`
+		ErrCode     int    `json:"errcode"`
+		ErrMsg      string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(tbody, &tok); err != nil {
+		return nil, err
+	}
+	if tok.ErrCode != 0 || tok.AccessToken == "" {
+		return nil, fmt.Errorf("wecom token: %s", string(tbody))
+	}
+	uq := url.Values{}
+	uq.Set("access_token", tok.AccessToken)
+	uq.Set("code", code)
+	ureq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.cfg.UserInfoURL+"?"+uq.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	uresp, err := p.client.Do(ureq)
+	if err != nil {
+		return nil, err
+	}
+	defer uresp.Body.Close()
+	ubody, _ := io.ReadAll(uresp.Body)
+	var u struct {
+		UserID  string `json:"UserId"`
+		OpenID  string `json:"OpenId"`
+		ErrCode int    `json:"errcode"`
+	}
+	if err := json.Unmarshal(ubody, &u); err != nil {
+		return nil, err
+	}
+	if u.ErrCode != 0 {
+		return nil, fmt.Errorf("wecom userinfo: %s", string(ubody))
+	}
+	sub := u.UserID
+	if sub == "" {
+		sub = u.OpenID
+	}
+	if sub == "" {
+		return nil, fmt.Errorf("wecom subject empty")
+	}
+	return &adapter.OAuthUserInfo{Subject: sub, RawJSON: string(ubody)}, nil
+}
+
 func mapUserInfo(provider string, body []byte) (*adapter.OAuthUserInfo, error) {
 	var m map[string]interface{}
 	if err := json.Unmarshal(body, &m); err != nil {
@@ -153,31 +364,96 @@ func mapUserInfo(provider string, body []byte) (*adapter.OAuthUserInfo, error) {
 	return info, nil
 }
 
-// Registry 管理多个 Provider。
+func buildProvider(name string, cfg config.OAuthProviderConfig) adapter.OAuthProvider {
+	kind := strings.ToLower(cfg.Kind)
+	if kind == "" {
+		switch name {
+		case "wechat":
+			kind = "wechat"
+		case "wecom", "wechat_work", "enterprise_wechat":
+			kind = "wecom"
+		default:
+			kind = "generic"
+		}
+	}
+	switch kind {
+	case "wechat":
+		return NewWeChat(name, cfg)
+	case "wecom":
+		return NewWeCom(name, cfg)
+	default:
+		return NewGeneric(name, cfg)
+	}
+}
+
+// Registry 管理多个 Provider，支持热更新。
 type Registry struct {
+	mu        sync.RWMutex
 	providers map[string]adapter.OAuthProvider
+	cfgs      map[string]config.OAuthProviderConfig
 }
 
 func NewRegistry(cfgs map[string]config.OAuthProviderConfig) *Registry {
-	r := &Registry{providers: map[string]adapter.OAuthProvider{}}
+	r := &Registry{
+		providers: map[string]adapter.OAuthProvider{},
+		cfgs:      map[string]config.OAuthProviderConfig{},
+	}
 	for name, cfg := range cfgs {
-		if cfg.ClientID == "" {
-			continue
-		}
-		r.providers[name] = NewGeneric(name, cfg)
+		r.Upsert(name, cfg)
 	}
 	return r
 }
 
+func (r *Registry) Upsert(name string, cfg config.OAuthProviderConfig) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cfgs[name] = cfg
+	if cfg.ClientID == "" {
+		delete(r.providers, name)
+		return
+	}
+	r.providers[name] = buildProvider(name, cfg)
+}
+
+func (r *Registry) Remove(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.providers, name)
+	delete(r.cfgs, name)
+}
+
 func (r *Registry) Get(name string) (adapter.OAuthProvider, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	p, ok := r.providers[name]
 	return p, ok
 }
 
+func (r *Registry) GetConfig(name string) (config.OAuthProviderConfig, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	c, ok := r.cfgs[name]
+	return c, ok
+}
+
 func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]string, 0, len(r.providers))
 	for k := range r.providers {
 		out = append(out, k)
+	}
+	return out
+}
+
+func (r *Registry) ListConfigs() map[string]config.OAuthProviderConfig {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]config.OAuthProviderConfig, len(r.cfgs))
+	for k, v := range r.cfgs {
+		cp := v
+		cp.ClientSecret = "" // 不回传密钥
+		out[k] = cp
 	}
 	return out
 }

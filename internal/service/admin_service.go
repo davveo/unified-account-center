@@ -85,10 +85,14 @@ type CreateAppRequest struct {
 	RedirectURIs   []string `json:"redirect_uris"`
 	OAuthProviders []string `json:"oauth_providers"`
 	AutoRegister   *bool    `json:"auto_register"`
+	RequirePKCE    *bool    `json:"require_pkce"`
+	LoginTitle     string   `json:"login_title"`
+	LogoURL        string   `json:"logo_url"`
+	ThemeColor     string   `json:"theme_color"`
 	AccessTTL      int64    `json:"access_ttl"`
 	RefreshTTL     int64    `json:"refresh_ttl"`
-	ClientID       string   `json:"client_id"`     // 可选自定义
-	ClientSecret   string   `json:"client_secret"` // 可选自定义；空则自动生成
+	ClientID       string   `json:"client_id"`
+	ClientSecret   string   `json:"client_secret"`
 }
 
 type CreateAppResult struct {
@@ -105,11 +109,16 @@ type AppView struct {
 	RedirectURIs   []string `json:"redirect_uris"`
 	OAuthProviders []string `json:"oauth_providers"`
 	AutoRegister   bool     `json:"auto_register"`
+	RequirePKCE    bool     `json:"require_pkce"`
+	LoginTitle     string   `json:"login_title"`
+	LogoURL        string   `json:"logo_url"`
+	ThemeColor     string   `json:"theme_color"`
 	AccessTTL      int64    `json:"access_ttl"`
 	RefreshTTL     int64    `json:"refresh_ttl"`
 	Status         string   `json:"status"`
 	CreatedAt      string   `json:"created_at"`
 	UpdatedAt      string   `json:"updated_at"`
+	HostedLoginURL string   `json:"hosted_login_url,omitempty"`
 }
 
 func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*CreateAppResult, error) {
@@ -187,6 +196,10 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 		RedirectURIs:     redirects,
 		OAuthProviders:   providers,
 		AutoRegister:     autoReg,
+		RequirePKCE:      req.RequirePKCE != nil && *req.RequirePKCE,
+		LoginTitle:       strings.TrimSpace(req.LoginTitle),
+		LogoURL:          strings.TrimSpace(req.LogoURL),
+		ThemeColor:       strings.TrimSpace(req.ThemeColor),
 		AccessTTL:        accessTTL,
 		RefreshTTL:       refreshTTL,
 		Status:           "active",
@@ -261,11 +274,16 @@ func toAppView(app *model.App) AppView {
 		RedirectURIs:   append([]string{}, app.RedirectURIs...),
 		OAuthProviders: append([]string{}, app.OAuthProviders...),
 		AutoRegister:   app.AutoRegister,
+		RequirePKCE:    app.RequirePKCE,
+		LoginTitle:     app.LoginTitle,
+		LogoURL:        app.LogoURL,
+		ThemeColor:     app.ThemeColor,
 		AccessTTL:      app.AccessTTL,
 		RefreshTTL:     app.RefreshTTL,
 		Status:         app.Status,
 		CreatedAt:      app.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:      app.UpdatedAt.Format("2006-01-02 15:04:05"),
+		HostedLoginURL: "/login?client_id=" + app.ClientID,
 	}
 }
 

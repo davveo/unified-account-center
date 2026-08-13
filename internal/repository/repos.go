@@ -45,8 +45,11 @@ type AppRepo interface {
 type RefreshTokenRepo interface {
 	Create(ctx context.Context, token *model.RefreshToken) error
 	FindByHash(ctx context.Context, hash string) (*model.RefreshToken, error)
+	FindByJTI(ctx context.Context, jti string) (*model.RefreshToken, error)
+	ListActiveByUser(ctx context.Context, userID, clientID string) ([]model.RefreshToken, error)
 	Revoke(ctx context.Context, jti string, at time.Time) error
 	RevokeAllByUser(ctx context.Context, userID, clientID string, at time.Time) error
+	RevokeOthers(ctx context.Context, userID, clientID, keepJTI string, at time.Time) error
 	MarkReplaced(ctx context.Context, jti, newJTI string, at time.Time) error
 	ConsumeActive(ctx context.Context, jti, newJTI string, at time.Time) (bool, error)
 }
@@ -108,5 +111,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.RefreshToken{},
 		&model.AuditLog{},
 		&model.AccessTokenBlacklist{},
+		&model.OAuthProviderRow{},
 	)
 }

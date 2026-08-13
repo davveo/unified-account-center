@@ -30,12 +30,16 @@ jwt:
 captcha:
   enabled: false
   provider: mock
+  site_key: ""
+  secret_key: ""
 
 otp:
   length: 6
   ttl: 300
   resend_interval: 60
   max_tries: 5
+  daily_limit_per_identity: 20
+  daily_limit_per_ip: 50
 
 password:
   min_length: 8
@@ -57,12 +61,23 @@ email:
 oauth:
   providers:
     github:
+      kind: generic
       client_id: ""
       client_secret: ""
       auth_url: "https://github.com/login/oauth/authorize"
       token_url: "https://github.com/login/oauth/access_token"
       userinfo_url: "https://api.github.com/user"
       scopes: ["read:user", "user:email"]
+    wechat:
+      kind: wechat
+      client_id: ""
+      client_secret: ""
+      scopes: ["snsapi_login"]
+    wecom:
+      kind: wecom
+      client_id: ""
+      client_secret: ""
+      scopes: ["snsapi_base"]
 
 bootstrap:
   create_default_app: true

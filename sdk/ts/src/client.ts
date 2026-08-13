@@ -88,4 +88,36 @@ export class AuthClient {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
   }
+
+  /** 跳转中台托管登录页 */
+  hostedLoginURL(input: { redirectUri: string; state?: string; codeChallenge?: string; deviceId?: string }) {
+    const u = new URL(`${this.endpoint}/login`);
+    u.searchParams.set("client_id", this.clientId);
+    u.searchParams.set("redirect_uri", input.redirectUri);
+    if (input.state) u.searchParams.set("state", input.state);
+    if (input.codeChallenge) u.searchParams.set("code_challenge", input.codeChallenge);
+    if (input.deviceId) u.searchParams.set("device_id", input.deviceId);
+    return u.toString();
+  }
+
+  /** 服务端用授权码换 Token（需 client_secret） */
+  exchangeCode(input: { code: string; redirectUri: string; codeVerifier?: string }) {
+    return this.request<{ token: Record<string, unknown>; user_id: string; device_id?: string }>("/api/v1/auth/token", {
+      method: "POST",
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code: input.code,
+        redirect_uri: input.redirectUri,
+        code_verifier: input.codeVerifier,
+      }),
+      requireSecret: true,
+    });
+  }
+
+  listSessions(accessToken: string, refreshToken?: string) {
+    const q = refreshToken ? `?refresh_token=${encodeURIComponent(refreshToken)}` : "";
+    return this.request<{ items: Array<Record<string, unknown>> }>(`/api/v1/auth/sessions${q}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
 }

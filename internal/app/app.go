@@ -72,7 +72,7 @@ func New(cfg *config.Config) (*Application, error) {
 	if cfg.Email.Provider == "mq" {
 		emailSender = email.NewMQ(producer, cfg.MQ.EmailTopic)
 	}
-	var captchaVerifier captcha.Verifier = captcha.NewMock(cfg.Captcha.Enabled)
+	var captchaVerifier captcha.Verifier = captcha.NewFromConfig(cfg.Captcha)
 
 	repos := repository.NewRepos(db)
 	if err := bootstrapApp(context.Background(), cfg, repos); err != nil {
@@ -80,6 +80,7 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	oauthReg := oauth.NewRegistry(cfg.OAuth.Providers)
+	loadOAuthProvidersFromDB(context.Background(), repos, oauthReg)
 
 	jwtMgr, err := buildJWT(cfg)
 	if err != nil {
@@ -206,8 +207,10 @@ func bootstrapApp(ctx context.Context, cfg *config.Config, repos *repository.Rep
 		TenantID:         "default",
 		AllowedMethods:   cfg.Bootstrap.DefaultAllowedMethods,
 		RedirectURIs:     cfg.Bootstrap.DefaultRedirectURIs,
-		OAuthProviders:   []string{"github"},
+		OAuthProviders:   []string{"github", "wechat"},
 		AutoRegister:     cfg.Bootstrap.AutoRegister,
+		LoginTitle:       "Demo App 登录",
+		ThemeColor:       "#1f6feb",
 		AccessTTL:        cfg.JWT.AccessTTL,
 		RefreshTTL:       cfg.JWT.RefreshTTL,
 		Status:           "active",
@@ -217,4 +220,21 @@ func bootstrapApp(ctx context.Context, cfg *config.Config, repos *repository.Rep
 	}
 	log.Printf("bootstrap default app client_id=%s", appRow.ClientID)
 	return nil
+}
+
+func loadOAuthProvidersFromDB(ctx context.Context, repos *repository.Repos, reg *oauth.Registry) {
+	var list []model.OAuthProviderRow
+	if err := repos.DB.WithContext(ctx).Where("enabled = ?", true).Find(&list).Error; err != nil {
+		return
+	}
+	for _, row := range list {
+		if row.ClientID == "" {
+			continue
+		}
+		reg.Upsert(row.Name, config.OAuthProviderConfig{
+			Kind: row.Kind, ClientID: row.ClientID, ClientSecret: row.ClientSecret,
+			AuthURL: row.AuthURL, TokenURL: row.TokenURL, UserInfoURL: row.UserInfoURL,
+			Scopes: append([]string{}, row.Scopes...),
+		})
+	}
 }

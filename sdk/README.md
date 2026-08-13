@@ -21,8 +21,11 @@ const auth = new AuthClient({
 await auth.challenge({ method: "phone_otp", identity: "13800138000", scene: "login" });
 ```
 
-Introspect / JWKS / Step-up：
+Introspect / JWKS / Step-up / Hosted：
 
 - `client.JWKS(ctx)` / `auth.jwks()` → `GET /.well-known/jwks.json`
 - `introspect` 需 `X-Client-Secret`
 - `stepUp(accessToken, …)` → 敏感操作二次验证
+- `hostedLoginURL({ redirectUri, state, codeChallenge })` → 跳转托管登录
+- `exchangeCode({ code, redirectUri, codeVerifier })` → 授权码换 Token
+- `listSessions(accessToken, refreshToken?)` → 设备会话

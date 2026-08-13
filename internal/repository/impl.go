@@ -198,6 +198,25 @@ func (r *refreshTokenRepo) FindByHash(ctx context.Context, hash string) (*model.
 	return &t, err
 }
 
+func (r *refreshTokenRepo) FindByJTI(ctx context.Context, jti string) (*model.RefreshToken, error) {
+	var t model.RefreshToken
+	err := r.db.WithContext(ctx).Where("jti = ?", jti).First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &t, err
+}
+
+func (r *refreshTokenRepo) ListActiveByUser(ctx context.Context, userID, clientID string) ([]model.RefreshToken, error) {
+	var list []model.RefreshToken
+	q := r.db.WithContext(ctx).Where("user_id = ? AND revoked_at IS NULL AND expire_at > ?", userID, time.Now())
+	if clientID != "" {
+		q = q.Where("client_id = ?", clientID)
+	}
+	err := q.Order("created_at desc").Find(&list).Error
+	return list, err
+}
+
 func (r *refreshTokenRepo) Revoke(ctx context.Context, jti string, at time.Time) error {
 	return r.db.WithContext(ctx).Model(&model.RefreshToken{}).
 		Where("jti = ?", jti).Update("revoked_at", at).Error
@@ -205,6 +224,15 @@ func (r *refreshTokenRepo) Revoke(ctx context.Context, jti string, at time.Time)
 
 func (r *refreshTokenRepo) RevokeAllByUser(ctx context.Context, userID, clientID string, at time.Time) error {
 	q := r.db.WithContext(ctx).Model(&model.RefreshToken{}).Where("user_id = ? AND revoked_at IS NULL", userID)
+	if clientID != "" {
+		q = q.Where("client_id = ?", clientID)
+	}
+	return q.Update("revoked_at", at).Error
+}
+
+func (r *refreshTokenRepo) RevokeOthers(ctx context.Context, userID, clientID, keepJTI string, at time.Time) error {
+	q := r.db.WithContext(ctx).Model(&model.RefreshToken{}).
+		Where("user_id = ? AND revoked_at IS NULL AND jti <> ?", userID, keepJTI)
 	if clientID != "" {
 		q = q.Where("client_id = ?", clientID)
 	}

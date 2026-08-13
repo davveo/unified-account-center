@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录</title>
+  <link rel="stylesheet" href="/hosted/static/style.css" />
+</head>
+<body>
+  <main class="stage">
+    <section class="card" id="card">
+      <div class="brand" id="brand">
+        <img id="logo" class="logo hidden" alt="" />
+        <h1 id="title">登录</h1>
+        <p class="sub" id="subtitle">统一账户中台托管登录</p>
+      </div>
+      <div id="methodTabs" class="tabs"></div>
+      <form id="loginForm" class="form">
+        <label id="identityLabel">手机号 / 邮箱</label>
+        <input id="identity" name="identity" autocomplete="username" required />
+        <div id="otpBlock" class="hidden">
+          <label>验证码</label>
+          <div class="row">
+            <input id="otp" name="otp" inputmode="numeric" maxlength="8" />
+            <button type="button" id="sendOtp" class="btn ghost">发送验证码</button>
+          </div>
+        </div>
+        <div id="pwdBlock" class="hidden">
+          <label>密码</label>
+          <input id="password" type="password" autocomplete="current-password" />
+        </div>
+        <input type="hidden" id="captchaToken" />
+        <button type="submit" class="btn primary" id="submitBtn">登录</button>
+      </form>
+      <div id="oauthBlock" class="oauth hidden"></div>
+      <p id="err" class="err hidden"></p>
+    </section>
+  </main>
+  <script src="/hosted/static/app.js"></script>
+</body>
+</html>

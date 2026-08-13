@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -163,4 +165,30 @@ func (c *Client) StepUp(ctx context.Context, accessToken string, payload map[str
 		_ = json.Unmarshal(envelope.Data, &out)
 	}
 	return out, nil
+}
+
+func (c *Client) HostedLoginURL(redirectURI, state, codeChallenge, deviceID string) string {
+	u := c.Endpoint + "/login?client_id=" + urlQueryEscape(c.ClientID) + "&redirect_uri=" + urlQueryEscape(redirectURI)
+	if state != "" {
+		u += "&state=" + urlQueryEscape(state)
+	}
+	if codeChallenge != "" {
+		u += "&code_challenge=" + urlQueryEscape(codeChallenge)
+	}
+	if deviceID != "" {
+		u += "&device_id=" + urlQueryEscape(deviceID)
+	}
+	return u
+}
+
+func (c *Client) ExchangeCode(ctx context.Context, code, redirectURI, codeVerifier string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do(ctx, http.MethodPost, "/api/v1/auth/token", map[string]any{
+		"grant_type": "authorization_code", "code": code, "redirect_uri": redirectURI, "code_verifier": codeVerifier,
+	}, &out, true)
+	return out, err
+}
+
+func urlQueryEscape(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }

@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	"github.com/davveo/unified-account-center/internal/config"
 	"github.com/davveo/unified-account-center/internal/model"
 	"github.com/davveo/unified-account-center/internal/pkg/crypto"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
@@ -18,6 +20,10 @@ type UpdateAppRequest struct {
 	RedirectURIs   []string `json:"redirect_uris"`
 	OAuthProviders []string `json:"oauth_providers"`
 	AutoRegister   *bool    `json:"auto_register"`
+	RequirePKCE    *bool    `json:"require_pkce"`
+	LoginTitle     *string  `json:"login_title"`
+	LogoURL        *string  `json:"logo_url"`
+	ThemeColor     *string  `json:"theme_color"`
 	AccessTTL      *int64   `json:"access_ttl"`
 	RefreshTTL     *int64   `json:"refresh_ttl"`
 }
@@ -57,6 +63,18 @@ func (s *AdminService) UpdateApp(ctx context.Context, clientID string, req Updat
 	}
 	if req.AutoRegister != nil {
 		app.AutoRegister = *req.AutoRegister
+	}
+	if req.RequirePKCE != nil {
+		app.RequirePKCE = *req.RequirePKCE
+	}
+	if req.LoginTitle != nil {
+		app.LoginTitle = *req.LoginTitle
+	}
+	if req.LogoURL != nil {
+		app.LogoURL = *req.LogoURL
+	}
+	if req.ThemeColor != nil {
+		app.ThemeColor = *req.ThemeColor
 	}
 	if req.AccessTTL != nil && *req.AccessTTL > 0 {
 		app.AccessTTL = *req.AccessTTL
@@ -193,4 +211,128 @@ func (s *AdminService) ListAudits(ctx context.Context, filter repository.AuditFi
 		})
 	}
 	return out, total, nil
+}
+
+type UpsertOAuthProviderRequest struct {
+	Name         string   `json:"name" binding:"required"`
+	Kind         string   `json:"kind"` // generic | wechat | wecom
+	ClientID     string   `json:"client_id"`
+	ClientSecret string   `json:"client_secret"`
+	AuthURL      string   `json:"auth_url"`
+	TokenURL     string   `json:"token_url"`
+	UserInfoURL  string   `json:"userinfo_url"`
+	Scopes       []string `json:"scopes"`
+	Enabled      *bool    `json:"enabled"`
+}
+
+func (s *AdminService) UpsertOAuthProvider(ctx context.Context, req UpsertOAuthProviderRequest) (*model.OAuthProviderRow, error) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, errcode.New(errcode.BadRequest, "name 不能为空")
+	}
+	kind := req.Kind
+	if kind == "" {
+		kind = "generic"
+		if name == "wechat" {
+			kind = "wechat"
+		}
+		if name == "wecom" {
+			kind = "wecom"
+		}
+	}
+	var row model.OAuthProviderRow
+	err := s.repos.DB.WithContext(ctx).Where("name = ?", name).First(&row).Error
+	notFound := err != nil
+	if notFound {
+		row = model.OAuthProviderRow{Name: name}
+	}
+	row.Kind = kind
+	if req.ClientID != "" {
+		row.ClientID = req.ClientID
+	}
+	if req.ClientSecret != "" {
+		row.ClientSecret = req.ClientSecret
+	}
+	if req.AuthURL != "" {
+		row.AuthURL = req.AuthURL
+	}
+	if req.TokenURL != "" {
+		row.TokenURL = req.TokenURL
+	}
+	if req.UserInfoURL != "" {
+		row.UserInfoURL = req.UserInfoURL
+	}
+	if req.Scopes != nil {
+		row.Scopes = req.Scopes
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	row.Enabled = enabled
+	if notFound {
+		if err := s.repos.DB.WithContext(ctx).Create(&row).Error; err != nil {
+			return nil, errcode.Wrap(errcode.Internal, "保存 OAuth Provider 失败", err)
+		}
+	} else {
+		if err := s.repos.DB.WithContext(ctx).Save(&row).Error; err != nil {
+			return nil, errcode.Wrap(errcode.Internal, "更新 OAuth Provider 失败", err)
+		}
+	}
+	if s.oauthReg != nil {
+		if row.Enabled && row.ClientID != "" {
+			s.oauthReg.Upsert(row.Name, config.OAuthProviderConfig{
+				Kind: row.Kind, ClientID: row.ClientID, ClientSecret: row.ClientSecret,
+				AuthURL: row.AuthURL, TokenURL: row.TokenURL, UserInfoURL: row.UserInfoURL,
+				Scopes: append([]string{}, row.Scopes...),
+			})
+		} else {
+			s.oauthReg.Remove(row.Name)
+		}
+	}
+	out := row
+	out.ClientSecret = ""
+	return &out, nil
+}
+
+func (s *AdminService) ListOAuthProviders(ctx context.Context) ([]model.OAuthProviderRow, error) {
+	var list []model.OAuthProviderRow
+	if err := s.repos.DB.WithContext(ctx).Order("name asc").Find(&list).Error; err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "查询 OAuth Provider 失败", err)
+	}
+	for i := range list {
+		list[i].ClientSecret = ""
+	}
+	seen := map[string]bool{}
+	for _, r := range list {
+		seen[r.Name] = true
+	}
+	for name, cfg := range s.cfg.OAuth.Providers {
+		if seen[name] {
+			continue
+		}
+		list = append(list, model.OAuthProviderRow{
+			Name: name, Kind: cfg.Kind, ClientID: cfg.ClientID,
+			AuthURL: cfg.AuthURL, TokenURL: cfg.TokenURL, UserInfoURL: cfg.UserInfoURL,
+			Scopes: cfg.Scopes, Enabled: cfg.ClientID != "",
+		})
+	}
+	return list, nil
+}
+
+func (s *AdminService) ListUserSessions(ctx context.Context, userID, clientID string) ([]SessionView, error) {
+	list, err := s.repos.Refresh.ListActiveByUser(ctx, userID, clientID)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "查询会话失败", err)
+	}
+	out := make([]SessionView, 0, len(list))
+	for _, rt := range list {
+		out = append(out, SessionView{
+			JTI: rt.JTI, ClientID: rt.ClientID, DeviceID: rt.DeviceID,
+			IP: rt.IP, UA: rt.UA,
+			ExpireAt:  rt.ExpireAt.Format(time.RFC3339),
+			CreatedAt: rt.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return out, nil
 }

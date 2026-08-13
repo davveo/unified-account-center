@@ -118,13 +118,18 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
 
 ## 鉴权增强（已落地）
 
-- 人机验证：`captcha.enabled=true` 时发码需传有效 `captcha_token`（mock 模式下非空且不为 `fail`）
+- 人机验证：`captcha.enabled=true` 时发码需传有效 `captcha_token`；`provider` 支持 `mock` / `turnstile` / `recaptcha`
 - RS256 + JWKS：`GET /.well-known/jwks.json`
 - 敏感操作二次验证：解绑 / 设密前先 `POST /api/v1/auth/step-up`，再携带 `step_up_token`
+- 托管登录：`GET /login?client_id=...&redirect_uri=...` → 授权码回跳 → `POST /api/v1/auth/token`
+- 会话管理：`GET/DELETE /api/v1/auth/sessions`，`POST /sessions/revoke-others`
+- OAuth：强制 PKCE（应用 `require_pkce`）、微信/企微 Provider、Admin 热更新 Provider
 
 ## SDK
 
 见 [sdk/README.md](sdk/README.md)。
+
+更完整的能力清单与后续迭代见 [todo.md](todo.md)。
 
 ## 测试
 

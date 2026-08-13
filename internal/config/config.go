@@ -59,8 +59,10 @@ type JWTConfig struct {
 }
 
 type CaptchaConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Provider string `yaml:"provider"` // mock
+	Enabled   bool   `yaml:"enabled"`
+	Provider  string `yaml:"provider"` // mock | turnstile | recaptcha
+	SiteKey   string `yaml:"site_key"`
+	SecretKey string `yaml:"secret_key"`
 }
 
 func (c JWTConfig) AccessDuration() time.Duration {
@@ -72,10 +74,12 @@ func (c JWTConfig) RefreshDuration() time.Duration {
 }
 
 type OTPConfig struct {
-	Length         int `yaml:"length"`
-	TTL            int `yaml:"ttl"`
-	ResendInterval int `yaml:"resend_interval"`
-	MaxTries       int `yaml:"max_tries"`
+	Length               int `yaml:"length"`
+	TTL                  int `yaml:"ttl"`
+	ResendInterval       int `yaml:"resend_interval"`
+	MaxTries             int `yaml:"max_tries"`
+	DailyLimitPerIdentity int `yaml:"daily_limit_per_identity"` // 单日单身份发码上限，0=20
+	DailyLimitPerIP      int `yaml:"daily_limit_per_ip"`       // 单日单 IP 发码上限，0=50
 }
 
 type PasswordConfig struct {
@@ -100,6 +104,7 @@ type EmailConfig struct {
 }
 
 type OAuthProviderConfig struct {
+	Kind         string   `yaml:"kind"` // generic | wechat | wecom
 	ClientID     string   `yaml:"client_id"`
 	ClientSecret string   `yaml:"client_secret"`
 	AuthURL      string   `yaml:"auth_url"`
@@ -171,6 +176,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.OTP.MaxTries == 0 {
 		c.OTP.MaxTries = 5
+	}
+	if c.OTP.DailyLimitPerIdentity == 0 {
+		c.OTP.DailyLimitPerIdentity = 20
+	}
+	if c.OTP.DailyLimitPerIP == 0 {
+		c.OTP.DailyLimitPerIP = 50
+	}
+	if c.Captcha.Provider == "" {
+		c.Captcha.Provider = "mock"
 	}
 	if c.Password.MinLength == 0 {
 		c.Password.MinLength = 8

@@ -140,3 +140,35 @@ func (h *AdminHandler) ListAudits(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"items": list, "total": total})
 }
+
+func (h *AdminHandler) ListOAuthProviders(c *gin.Context) {
+	list, err := h.admin.ListOAuthProviders(c.Request.Context())
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list})
+}
+
+func (h *AdminHandler) UpsertOAuthProvider(c *gin.Context) {
+	var req service.UpsertOAuthProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.admin.UpsertOAuthProvider(c.Request.Context(), req)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) ListUserSessions(c *gin.Context) {
+	list, err := h.admin.ListUserSessions(c.Request.Context(), c.Param("user_id"), c.Query("client_id"))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list})
+}

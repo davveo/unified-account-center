@@ -118,16 +118,16 @@ func TestRedirectAllowedExactOnly(t *testing.T) {
 	}), env.auth, env.redis)
 	env.auth.SetOAuth(oauthSvc)
 
-	_, err := oauthSvc.Start(ctx, "app_test", "github", "http://localhost/cb.evil", "", "")
+	_, err := oauthSvc.Start(ctx, "app_test", "github", "http://localhost/cb.evil", "", "", "")
 	if !errcode.Is(err, errcode.BadRequest) {
 		t.Fatalf("prefix redirect must be rejected: %v", err)
 	}
-	_, err = oauthSvc.Start(ctx, "app_test", "github", "http://localhost/cb", "", "")
+	_, err = oauthSvc.Start(ctx, "app_test", "github", "http://localhost/cb", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = oauthSvc.Start(ctx, "app_test", "wechat", "http://localhost/cb", "", "")
+	_, err = oauthSvc.Start(ctx, "app_test", "wechat", "http://localhost/cb", "", "", "")
 	if !errcode.Is(err, errcode.ForbiddenApp) && !errcode.Is(err, errcode.BadRequest) {
 		t.Fatalf("expect provider blocked: %v", err)
 	}

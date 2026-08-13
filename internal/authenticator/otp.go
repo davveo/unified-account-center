@@ -83,12 +83,13 @@ func (a *OTPAuth) Challenge(ctx context.Context, req ChallengeRequest) (*Challen
 		return nil, err
 	}
 
-	// identity + IP 双限流
+	// identity + IP 小时限流
 	ok, wait, err := a.redis.Allow(ctx, "uac:rl:otp:id:"+norm, 10, time.Hour)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "限流失败", err)
 	}
 	if !ok {
+		_ = wait
 		return nil, errcode.New(errcode.RateLimited, "发送过于频繁，请稍后重试")
 	}
 	if req.IP != "" {
@@ -99,6 +100,33 @@ func (a *OTPAuth) Challenge(ctx context.Context, req ChallengeRequest) (*Challen
 		if !ok {
 			_ = wait
 			return nil, errcode.New(errcode.RateLimited, "发送过于频繁，请稍后重试")
+		}
+	}
+
+	// 日额度熔断（防短信成本爆炸）
+	dayID := time.Now().UTC().Format("20060102")
+	idDaily := a.otpCfg.DailyLimitPerIdentity
+	if idDaily <= 0 {
+		idDaily = 20
+	}
+	ok, _, err = a.redis.Allow(ctx, "uac:rl:otp:day:id:"+dayID+":"+norm, idDaily, 24*time.Hour)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "限流失败", err)
+	}
+	if !ok {
+		return nil, errcode.New(errcode.RateLimited, "今日发码次数已达上限")
+	}
+	if req.IP != "" {
+		ipDaily := a.otpCfg.DailyLimitPerIP
+		if ipDaily <= 0 {
+			ipDaily = 50
+		}
+		ok, _, err = a.redis.Allow(ctx, "uac:rl:otp:day:ip:"+dayID+":"+req.IP, ipDaily, 24*time.Hour)
+		if err != nil {
+			return nil, errcode.Wrap(errcode.Internal, "限流失败", err)
+		}
+		if !ok {
+			return nil, errcode.New(errcode.RateLimited, "今日该网络发码次数已达上限")
 		}
 	}
 

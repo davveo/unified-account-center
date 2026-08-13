@@ -16,6 +16,7 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
 	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
 	"github.com/davveo/unified-account-center/internal/pkg/observability"
+	"github.com/davveo/unified-account-center/internal/pkg/pkce"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
 	"github.com/davveo/unified-account-center/internal/repository"
 )
@@ -68,6 +69,8 @@ type TokenDTO struct {
 	ExpireIn        int64  `json:"expire_in"`
 	RefreshToken    string `json:"refresh_token"`
 	RefreshExpireIn int64  `json:"refresh_expire_in"`
+	DeviceID        string `json:"device_id,omitempty"`
+	RefreshJTI      string `json:"refresh_jti,omitempty"`
 }
 
 type IdentityView struct {
@@ -165,9 +168,18 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		if s.oauth == nil {
 			return nil, errcode.New(errcode.Internal, "OAuth 服务未初始化")
 		}
-		if err := s.oauth.ConsumeState(ctx, meta.ClientID, provider, dto.Credential["state"], redirectURI); err != nil {
+		statePayload, err := s.oauth.ConsumeState(ctx, meta.ClientID, provider, dto.Credential["state"], redirectURI)
+		if err != nil {
 			s.audit(ctx, app, "", "login_fail", false, "oauth_state", meta)
 			return nil, err
+		}
+		if statePayload.CodeChallenge != "" {
+			if !pkce.VerifyS256(dto.Credential["code_verifier"], statePayload.CodeChallenge) {
+				s.audit(ctx, app, "", "login_fail", false, "oauth_pkce", meta)
+				return nil, errcode.New(errcode.InvalidCred, "PKCE 校验失败")
+			}
+		} else if app.RequirePKCE {
+			return nil, errcode.New(errcode.BadRequest, "应用要求 PKCE")
 		}
 		dto.Provider = provider
 	}
@@ -356,6 +368,28 @@ func (s *AuthService) Bind(ctx context.Context, meta RequestMeta, userID string,
 	}
 	if dto.Credential == nil {
 		dto.Credential = map[string]string{}
+	}
+	if dto.Method == model.MethodOAuth2 {
+		provider := dto.Provider
+		if provider == "" {
+			provider = dto.Credential["provider"]
+		}
+		redirectURI := dto.Credential["redirect_uri"]
+		if s.oauth == nil {
+			return errcode.New(errcode.Internal, "OAuth 服务未初始化")
+		}
+		statePayload, err := s.oauth.ConsumeState(ctx, meta.ClientID, provider, dto.Credential["state"], redirectURI)
+		if err != nil {
+			s.audit(ctx, app, userID, "bind_fail", false, "oauth_state", meta)
+			return err
+		}
+		if statePayload.CodeChallenge != "" && !pkce.VerifyS256(dto.Credential["code_verifier"], statePayload.CodeChallenge) {
+			return errcode.New(errcode.InvalidCred, "PKCE 校验失败")
+		}
+		if statePayload.BindUserID != "" && statePayload.BindUserID != userID {
+			return errcode.New(errcode.ForbiddenApp, "OAuth 绑定会话与当前用户不匹配")
+		}
+		dto.Provider = provider
 	}
 	principal, err := auth.Verify(ctx, authenticator.VerifyRequest{
 		ClientID:   meta.ClientID,
@@ -710,6 +744,9 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 	}
 	rtPlain := idgen.New("rt") + idgen.RandomHex(16)
 	jti := idgen.New("rj")
+	if client.DeviceID == "" {
+		client.DeviceID = idgen.New("dev")
+	}
 	rt := &model.RefreshToken{
 		JTI:       jti,
 		TokenHash: crypto.HashToken(rtPlain),
@@ -729,6 +766,8 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 		ExpireIn:        int64(accessTTL.Seconds()),
 		RefreshToken:    rtPlain,
 		RefreshExpireIn: int64(refreshTTL.Seconds()),
+		DeviceID:        client.DeviceID,
+		RefreshJTI:      jti,
 	}, nil
 }
 

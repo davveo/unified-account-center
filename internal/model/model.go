@@ -133,12 +133,34 @@ type App struct {
 	RedirectURIs    StringList `gorm:"type:json;not null" json:"redirect_uris"`
 	OAuthProviders  StringList `gorm:"type:json" json:"oauth_providers"`
 	AutoRegister    bool       `gorm:"not null;default:true" json:"auto_register"`
+	RequirePKCE     bool       `gorm:"not null;default:false" json:"require_pkce"`
+	LoginTitle      string     `gorm:"size:128" json:"login_title"`
+	LogoURL         string     `gorm:"size:512" json:"logo_url"`
+	ThemeColor      string     `gorm:"size:32" json:"theme_color"`
 	AccessTTL       int64      `gorm:"not null;default:7200" json:"access_ttl"`
 	RefreshTTL      int64      `gorm:"not null;default:2592000" json:"refresh_ttl"`
 	Status          string     `gorm:"size:32;not null;default:active" json:"status"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
+
+// OAuthProviderRow 平台级 OAuth Provider 配置（支持后台热更新）。
+type OAuthProviderRow struct {
+	ID           uint64     `gorm:"primaryKey;autoIncrement" json:"-"`
+	Name         string     `gorm:"size:64;uniqueIndex;not null" json:"name"`
+	Kind         string     `gorm:"size:32;not null;default:generic" json:"kind"` // generic | wechat | wecom
+	ClientID     string     `gorm:"size:255" json:"client_id"`
+	ClientSecret string     `gorm:"size:255" json:"-"`
+	AuthURL      string     `gorm:"size:512" json:"auth_url"`
+	TokenURL     string     `gorm:"size:512" json:"token_url"`
+	UserInfoURL  string     `gorm:"size:512" json:"userinfo_url"`
+	Scopes       StringList `gorm:"type:json" json:"scopes"`
+	Enabled      bool       `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+func (OAuthProviderRow) TableName() string { return "oauth_provider_configs" }
 
 func (App) TableName() string { return "apps" }
 

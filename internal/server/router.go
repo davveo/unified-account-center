@@ -88,6 +88,22 @@ func NewRouter(d Deps) *gin.Engine {
 		r.StaticFS("/admin/static", http.FS(adminStatic))
 	}
 
+	hostedStatic, err := fs.Sub(web.HostedFS, "hosted")
+	if err == nil {
+		r.GET("/login", func(c *gin.Context) {
+			data, err := fs.ReadFile(hostedStatic, "index.html")
+			if err != nil {
+				c.String(http.StatusInternalServerError, "login page missing")
+				return
+			}
+			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+		})
+		r.StaticFS("/hosted/static", http.FS(hostedStatic))
+	}
+
+	// 托管登录配置（仅需 client_id）
+	r.GET("/api/v1/auth/hosted/config", d.AuthHandler.HostedConfig)
+
 	v1 := r.Group("/api/v1/auth")
 	{
 		pub := v1.Group("")
@@ -108,6 +124,7 @@ func NewRouter(d Deps) *gin.Engine {
 		{
 			serverAPI.GET("/introspect", d.AuthHandler.Introspect)
 			serverAPI.POST("/introspect", d.AuthHandler.Introspect)
+			serverAPI.POST("/token", d.AuthHandler.ExchangeToken)
 		}
 
 		user := v1.Group("")
@@ -119,6 +136,12 @@ func NewRouter(d Deps) *gin.Engine {
 			user.POST("/identities/unbind", d.AuthHandler.Unbind)
 			user.POST("/password/set", d.AuthHandler.SetPassword)
 			user.POST("/step-up", d.AuthHandler.StepUp)
+			user.POST("/hosted/code", d.AuthHandler.IssueHostedCode)
+			user.GET("/sessions", d.AuthHandler.ListSessions)
+			user.DELETE("/sessions/:jti", d.AuthHandler.RevokeSession)
+			user.POST("/sessions/revoke-others", d.AuthHandler.RevokeOtherSessions)
+			// 已登录发起 OAuth 绑定
+			user.GET("/oauth/:provider/bind-start", d.AuthHandler.OAuthStart)
 		}
 	}
 
@@ -131,9 +154,12 @@ func NewRouter(d Deps) *gin.Engine {
 		adminAPI.PATCH("/apps/:client_id", d.AdminHandler.UpdateApp)
 		adminAPI.POST("/apps/:client_id/rotate-secret", d.AdminHandler.RotateSecret)
 		adminAPI.GET("/channels", d.AdminHandler.ListChannels)
+		adminAPI.GET("/oauth-providers", d.AdminHandler.ListOAuthProviders)
+		adminAPI.PUT("/oauth-providers", d.AdminHandler.UpsertOAuthProvider)
 		adminAPI.GET("/users", d.AdminHandler.ListUsers)
 		adminAPI.POST("/users/:user_id/status", d.AdminHandler.SetUserStatus)
 		adminAPI.POST("/users/:user_id/force-logout", d.AdminHandler.ForceLogout)
+		adminAPI.GET("/users/:user_id/sessions", d.AdminHandler.ListUserSessions)
 		adminAPI.GET("/audits", d.AdminHandler.ListAudits)
 	}
 

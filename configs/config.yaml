@@ -30,13 +30,17 @@ jwt:
 
 captcha:
   enabled: false
-  provider: mock # mock：enabled 时要求 captcha_token 非空且不为 fail
+  provider: mock # mock | turnstile | recaptcha
+  site_key: ""
+  secret_key: ""
 
 otp:
   length: 6
   ttl: 300
   resend_interval: 60
   max_tries: 5
+  daily_limit_per_identity: 20
+  daily_limit_per_ip: 50
 
 password:
   min_length: 8
@@ -59,13 +63,24 @@ email:
 oauth:
   providers:
     github:
+      kind: generic
       client_id: ""
       client_secret: ""
       auth_url: "https://github.com/login/oauth/authorize"
       token_url: "https://github.com/login/oauth/access_token"
       userinfo_url: "https://api.github.com/user"
       scopes: ["read:user", "user:email"]
-      # field_mapping: sub=id, name=login, avatar=avatar_url
+    wechat:
+      kind: wechat
+      client_id: ""      # appid
+      client_secret: ""  # appsecret
+      # auth/token/userinfo 有默认值，可省略
+      scopes: ["snsapi_login"]
+    wecom:
+      kind: wecom
+      client_id: ""      # corpid
+      client_secret: ""  # corpsecret
+      scopes: ["snsapi_base"]
 
 bootstrap:
   # 启动时若不存在则创建默认应用，便于本地联调
