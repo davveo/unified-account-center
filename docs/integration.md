@@ -2,12 +2,17 @@
 
 本文面向需要接入「统一账户认证中台」的业务应用开发者。
 
+操作手册：
+- [管理员版](./operations-admin.md)（后台 / 审批 / 租户 / SSO / RBAC）
+- [终端用户版](./operations-user.md)（登录 / MFA / Passkey / 邀请码 / 合并）
+- [索引](./operations.md)
+
 ## 1. 接入准备
 
 1. 打开管理后台 `http://<host>:8080/admin/`（Header/本地保存 `X-Admin-Token`）
 2. 在「应用凭证」创建应用，获得：
    - `client_id`
-   - `client_secret`（**仅创建响应中返回一次明文**，请立即保存；前端禁止下发）
+   - `client_secret`（可在后台「查看」；前端禁止下发）
 3. 配置启用登录方式（如 `phone_otp`、`email_password`、`oauth2`）
 4. 若使用 OAuth，配置 `redirect_uri` 白名单与 Provider（GitHub 等）
 5. 业务 API 统一携带用户 `Authorization: Bearer <access_token>`

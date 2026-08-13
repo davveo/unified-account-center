@@ -168,7 +168,10 @@ email:
 
 ## 对接文档
 
-详见 [docs/integration.md](docs/integration.md)。
+- 业务接入：[docs/integration.md](docs/integration.md)
+- 操作手册索引：[docs/operations.md](docs/operations.md)
+  - 管理员版：[docs/operations-admin.md](docs/operations-admin.md)
+  - 终端用户版：[docs/operations-user.md](docs/operations-user.md)
 
 ## 许可
 
