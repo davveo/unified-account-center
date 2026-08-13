@@ -162,24 +162,25 @@ func (s *StringList) Scan(value interface{}) error {
 }
 
 type App struct {
-	ID              uint64     `gorm:"primaryKey;autoIncrement" json:"-"`
-	ClientID        string     `gorm:"size:64;uniqueIndex;not null" json:"client_id"`
-	ClientSecretHash string    `gorm:"size:255;not null" json:"-"`
-	Name            string     `gorm:"size:128" json:"name"`
-	TenantID        string     `gorm:"size:64;not null;default:default" json:"tenant_id"`
-	AllowedMethods  StringList `gorm:"type:json;not null" json:"allowed_methods"`
-	RedirectURIs    StringList `gorm:"type:json;not null" json:"redirect_uris"`
-	OAuthProviders  StringList `gorm:"type:json" json:"oauth_providers"`
-	AutoRegister    bool       `gorm:"not null;default:true" json:"auto_register"`
-	RequirePKCE     bool       `gorm:"not null;default:false" json:"require_pkce"`
-	LoginTitle      string     `gorm:"size:128" json:"login_title"`
-	LogoURL         string     `gorm:"size:512" json:"logo_url"`
-	ThemeColor      string     `gorm:"size:32" json:"theme_color"`
-	AccessTTL       int64      `gorm:"not null;default:7200" json:"access_ttl"`
-	RefreshTTL      int64      `gorm:"not null;default:2592000" json:"refresh_ttl"`
-	Status          string     `gorm:"size:32;not null;default:active" json:"status"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID               uint64     `gorm:"primaryKey;autoIncrement" json:"-"`
+	ClientID         string     `gorm:"size:64;uniqueIndex;not null" json:"client_id"`
+	ClientSecretHash string     `gorm:"size:255;not null" json:"-"`
+	ClientSecretEnc  string     `gorm:"size:512" json:"-"` // AES 密文，供管理后台查看
+	Name             string     `gorm:"size:128" json:"name"`
+	TenantID         string     `gorm:"size:64;not null;default:default" json:"tenant_id"`
+	AllowedMethods   StringList `gorm:"type:json;not null" json:"allowed_methods"`
+	RedirectURIs     StringList `gorm:"type:json;not null" json:"redirect_uris"`
+	OAuthProviders   StringList `gorm:"type:json" json:"oauth_providers"`
+	AutoRegister     bool       `gorm:"not null;default:true" json:"auto_register"`
+	RequirePKCE      bool       `gorm:"not null;default:false" json:"require_pkce"`
+	LoginTitle       string     `gorm:"size:128" json:"login_title"`
+	LogoURL          string     `gorm:"size:512" json:"logo_url"`
+	ThemeColor       string     `gorm:"size:32" json:"theme_color"`
+	AccessTTL        int64      `gorm:"not null;default:7200" json:"access_ttl"`
+	RefreshTTL       int64      `gorm:"not null;default:2592000" json:"refresh_ttl"`
+	Status           string     `gorm:"size:32;not null;default:active" json:"status"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // OAuthProviderRow 平台级 OAuth Provider 配置（支持后台热更新）。
@@ -243,3 +244,104 @@ type AccessTokenBlacklist struct {
 }
 
 func (AccessTokenBlacklist) TableName() string { return "access_token_blacklist" }
+
+// ---- P2: 多租户 / SSO / 邀请 / RBAC ----
+
+const (
+	TenantStatusActive   = "active"
+	TenantStatusDisabled = "disabled"
+
+	InviteStatusActive  = "active"
+	InviteStatusRevoked = "revoked"
+
+	JoinPending  = "pending"
+	JoinApproved = "approved"
+	JoinRejected = "rejected"
+
+	RolePlatformAdmin = "platform_admin"
+	RoleTenantAdmin   = "tenant_admin"
+	RoleOperator      = "operator"
+	RoleViewer        = "viewer"
+	RoleUser          = "user"
+)
+
+type Tenant struct {
+	ID                   uint64     `gorm:"primaryKey;autoIncrement" json:"-"`
+	TenantID             string     `gorm:"size:64;uniqueIndex;not null" json:"tenant_id"`
+	Name                 string     `gorm:"size:128;not null" json:"name"`
+	Status               string     `gorm:"size:32;not null;default:active" json:"status"`
+	MaxApps              int        `gorm:"not null;default:20" json:"max_apps"`
+	DailyOTPLimit        int        `gorm:"not null;default:5000" json:"daily_otp_limit"`
+	ForceSSO             bool       `gorm:"not null;default:false" json:"force_sso"`
+	DisableLocalPassword bool       `gorm:"not null;default:false" json:"disable_local_password"`
+	SSODomains           StringList `gorm:"type:json" json:"sso_domains"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+func (Tenant) TableName() string { return "tenants" }
+
+// EnterpriseIdP 按邮箱域名路由到 OAuth/OIDC Provider。
+type EnterpriseIdP struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID   string    `gorm:"size:64;index;not null;uniqueIndex:uk_idp_domain" json:"tenant_id"`
+	Domain     string    `gorm:"size:128;not null;uniqueIndex:uk_idp_domain" json:"domain"` // acme.com
+	Provider   string    `gorm:"size:64;not null" json:"provider"`                         // oauth provider name
+	JITEnabled bool      `gorm:"not null;default:true" json:"jit_enabled"`
+	AttrMap    string    `gorm:"type:text" json:"attr_map"` // JSON: email/name/avatar keys
+	Enabled    bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (EnterpriseIdP) TableName() string { return "enterprise_idps" }
+
+type Invite struct {
+	ID        uint64     `gorm:"primaryKey;autoIncrement" json:"-"`
+	Code      string     `gorm:"size:64;uniqueIndex;not null" json:"code"`
+	TenantID  string     `gorm:"size:64;index;not null" json:"tenant_id"`
+	ClientID  string     `gorm:"size:64;index" json:"client_id"`
+	Email     string     `gorm:"size:255" json:"email"`
+	Phone     string     `gorm:"size:32" json:"phone"`
+	MaxUses   int        `gorm:"not null;default:1" json:"max_uses"`
+	UsedCount int        `gorm:"not null;default:0" json:"used_count"`
+	ExpireAt  *time.Time `gorm:"index" json:"expire_at"`
+	CreatedBy string     `gorm:"size:64" json:"created_by"`
+	Status    string     `gorm:"size:32;not null;default:active" json:"status"`
+	Note      string     `gorm:"size:255" json:"note"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+func (Invite) TableName() string { return "invites" }
+
+// JoinRequest auto_register=false 时的审批入驻。
+type JoinRequest struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
+	RequestID  string    `gorm:"size:64;uniqueIndex;not null" json:"request_id"`
+	TenantID   string    `gorm:"size:64;index;not null" json:"tenant_id"`
+	ClientID   string    `gorm:"size:64;index;not null" json:"client_id"`
+	Method     string    `gorm:"size:32;not null" json:"method"`
+	Identity   string    `gorm:"size:255;not null" json:"identity"`
+	Provider   string    `gorm:"size:64" json:"provider"`
+	IdType     string    `gorm:"size:32" json:"id_type"`
+	Identifier string    `gorm:"size:255" json:"identifier"`
+	ProfileJSON string   `gorm:"type:text" json:"profile_json"`
+	Status     string    `gorm:"size:32;not null;default:pending;index" json:"status"`
+	Reviewer   string    `gorm:"size:64" json:"reviewer"`
+	Note       string    `gorm:"size:255" json:"note"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+func (JoinRequest) TableName() string { return "join_requests" }
+
+type RoleBinding struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
+	UserID    string    `gorm:"size:64;not null;uniqueIndex:uk_role_bind" json:"user_id"`
+	TenantID  string    `gorm:"size:64;not null;default:'';uniqueIndex:uk_role_bind" json:"tenant_id"` // 空=平台级
+	Role      string    `gorm:"size:32;not null;uniqueIndex:uk_role_bind" json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (RoleBinding) TableName() string { return "role_bindings" }

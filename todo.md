@@ -1,7 +1,7 @@
 # Unified Account Center — 能力扩展 Todo
 
 > 基于当前已落地能力（验证码/密码/OAuth、绑定解绑、Token 轮换、管理后台、JWKS、step-up、healthz/metrics、SDK、对抗单测）与技术方案对照整理。
-> 状态：P0 / P1 已完成；P2–P3 待排期
+> 状态：P0 / P1 / P2 已完成；P3 待排期
 
 ---
 
@@ -17,6 +17,7 @@
 - [x] Go / TS 小 SDK、对抗性单测
 - [x] **P0**：托管登录、PKCE/微信企微、会话设备管理、发码日熔断
 - [x] **P1**：MFA/TOTP、Passkey、账号合并、轻量风控
+- [x] **P2**：多租户、企业 SSO、邀请入驻、轻量 RBAC
 
 ---
 
@@ -107,37 +108,37 @@
 
 ### 9. 多租户运营面
 
-- [ ] 租户 CRUD、租户管理员
-- [ ] 租户级配额（应用数、日发码量）
-- [ ] 租户数据隔离策略与后台筛选强化
-- [ ] 租户维度审计与 metrics
+- [x] 租户 CRUD、租户管理员
+- [x] 租户级配额（应用数、日发码量）
+- [x] 租户数据隔离策略与后台筛选强化
+- [x] 租户维度审计与 metrics
 
 
 
 ### 10. 企业 SSO
 
-- [ ] OIDC Enterprise（按邮箱域名路由 IdP）
-- [ ] SAML 2.0（可选）
-- [ ] JIT 建用户与属性映射
-- [ ] 企业侧强制 SSO / 禁用本地密码策略
+- [x] OIDC Enterprise（按邮箱域名路由 IdP）
+- [ ] SAML 2.0（可选，暂缓）
+- [x] JIT 建用户与属性映射
+- [x] 企业侧强制 SSO / 禁用本地密码策略
 
 
 
 ### 11. 邀请制注册
 
-- [ ] 邀请码 / 邮件邀请链路
-- [ ] `auto_register=false` 时的审批入驻
-- [ ] 管理员创建用户并下发初始凭证
-- [ ] 邀请过期、使用次数限制
+- [x] 邀请码 / 邮件邀请链路
+- [x] `auto_register=false` 时的审批入驻
+- [x] 管理员创建用户并下发初始凭证
+- [x] 邀请过期、使用次数限制
 
 
 
 ### 12. 轻量 RBAC / Scope（可选）
 
-- [ ] 角色模型与用户角色绑定
-- [ ] Access Token 写入 `scope` / `roles` claim
-- [ ] 管理 API 按角色鉴权（替代单一 admin token）
-- [ ] 明确与完整 IAM 的边界（不做细粒度 ABAC）
+- [x] 角色模型与用户角色绑定
+- [x] Access Token 写入 `scope` / `roles` claim
+- [x] 管理 API 按角色鉴权（替代单一 admin token）
+- [x] 明确与完整 IAM 的边界（不做细粒度 ABAC）
 
 ---
 
@@ -200,7 +201,7 @@
 | ----- | ------------------------------ | ------------- | ----------- |
 | 下一迭代  | #1 托管登录页、#3 设备会话、#4 真实 captcha | 接入体验 + 防刷立刻可见 | ✅ 已完成（含 #2） |
 | 再下一迭代 | #5–#8 TOTP MFA / Passkey / 合并 / 风控 | 安全与账户体验     | ✅ 已完成          |
-| 中期    | #9–#12 多租户/企业 SSO/邀请/RBAC      | B 端与治理能力     | 待做          |
+| 中期    | #9–#12 多租户/企业 SSO/邀请/RBAC      | B 端与治理能力     | ✅ 已完成（SAML 暂缓） |
 | 长期    | #13–#17 工程化                    | 可维护性与生态对接     | 待做          |
 
 
@@ -228,3 +229,12 @@ P1 入口速览：
 - Passkey：`/passkey/register|login` + `GET/DELETE /passkeys`
 - 合并：`POST /merge/start|confirm`；Admin `POST /users/merge`
 - 风控：`risk.*` 配置；Admin `POST /risk/unlock`；重置 MFA `POST /users/:id/reset-mfa`
+
+P2 入口速览：
+
+- 租户：`POST/GET/PATCH /api/v1/admin/tenants`
+- 企业 SSO：`PUT/GET /api/v1/admin/enterprise-idps`；发现 `GET/POST /api/v1/auth/sso/discover?email=`
+- 邀请：`POST/GET /api/v1/admin/invites`；登录携带 `invite_code`
+- 入驻审批：`auto_register=false` → `40320` + `join_request_id`；Admin `GET/POST .../join-requests`
+- 建用户：`POST /api/v1/admin/users`
+- RBAC：`POST /api/v1/admin/roles/assign|revoke`；JWT `roles`/`scope`；Admin 可用 Bearer 管理角色 JWT

@@ -68,6 +68,7 @@ type testEnv struct {
 	cfg   *config.Config
 	repos *repository.Repos
 	auth  *service.AuthService
+	jwt   *jwtutil.Manager
 	sms   *captureSMS
 	email *captureEmail
 	redis *redisx.Client
@@ -135,7 +136,7 @@ func setupEnv(t *testing.T) *testEnv {
 	)
 	jwtMgr := jwtutil.NewManager(cfg.JWT.Secret, cfg.JWT.Issuer)
 	authSvc := service.NewAuthService(cfg, repos, auths, jwtMgr, rdb)
-	return &testEnv{cfg: cfg, repos: repos, auth: authSvc, sms: smsCap, email: emailCap, redis: rdb, mr: mr}
+	return &testEnv{cfg: cfg, repos: repos, auth: authSvc, jwt: jwtMgr, sms: smsCap, email: emailCap, redis: rdb, mr: mr}
 }
 
 func (env *testEnv) grantStepUp(t *testing.T, userID string) string {

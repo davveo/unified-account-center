@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/davveo/unified-account-center/internal/adapter/oauth"
 	"github.com/davveo/unified-account-center/internal/config"
@@ -129,6 +130,8 @@ type AppView struct {
 	CreatedAt      string   `json:"created_at"`
 	UpdatedAt      string   `json:"updated_at"`
 	HostedLoginURL string   `json:"hosted_login_url,omitempty"`
+	SecretMasked   string   `json:"secret_masked"`
+	HasSecret      bool     `json:"has_secret"` // 是否可点查看明文
 }
 
 func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*CreateAppResult, error) {
@@ -139,6 +142,9 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 	tenantID := req.TenantID
 	if tenantID == "" {
 		tenantID = "default"
+	}
+	if err := s.assertTenantAppQuota(ctx, tenantID); err != nil {
+		return nil, err
 	}
 	methods := req.AllowedMethods
 	if len(methods) == 0 {
@@ -175,6 +181,10 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "生成密钥失败", err)
 	}
+	enc, err := crypto.SealSecret(s.secretSealKey(), secret)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "加密密钥失败", err)
+	}
 
 	autoReg := true
 	if req.AutoRegister != nil {
@@ -200,6 +210,7 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 	app := &model.App{
 		ClientID:         clientID,
 		ClientSecretHash: hash,
+		ClientSecretEnc:  enc,
 		Name:             name,
 		TenantID:         tenantID,
 		AllowedMethods:   methods,
@@ -224,8 +235,8 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 	}, nil
 }
 
-func (s *AdminService) ListApps(ctx context.Context, limit, offset int) ([]AppView, int64, error) {
-	list, total, err := s.repos.App.List(ctx, limit, offset)
+func (s *AdminService) ListApps(ctx context.Context, tenantID string, limit, offset int) ([]AppView, int64, error) {
+	list, total, err := s.repos.App.List(ctx, tenantID, limit, offset)
 	if err != nil {
 		return nil, 0, errcode.Wrap(errcode.Internal, "查询应用失败", err)
 	}
@@ -276,6 +287,11 @@ func (s *AdminService) ListChannels() []ChannelInfo {
 }
 
 func toAppView(app *model.App) AppView {
+	masked := "••••••••••••••••"
+	has := strings.TrimSpace(app.ClientSecretEnc) != ""
+	if !has {
+		masked = "（仅哈希，需轮换后可查看）"
+	}
 	return AppView{
 		ClientID:       app.ClientID,
 		Name:           app.Name,
@@ -294,7 +310,43 @@ func toAppView(app *model.App) AppView {
 		CreatedAt:      app.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:      app.UpdatedAt.Format("2006-01-02 15:04:05"),
 		HostedLoginURL: "/login?client_id=" + app.ClientID,
+		SecretMasked:   masked,
+		HasSecret:      has,
 	}
+}
+
+func (s *AdminService) secretSealKey() string {
+	if s.cfg != nil && s.cfg.JWT.Secret != "" {
+		return s.cfg.JWT.Secret
+	}
+	if s.cfg != nil && s.cfg.Admin.Token != "" {
+		return s.cfg.Admin.Token
+	}
+	return "uac-dev-seal-key"
+}
+
+// RevealAppSecret 管理后台查看 client_secret 明文。
+func (s *AdminService) RevealAppSecret(ctx context.Context, clientID string) (string, error) {
+	app, err := s.repos.App.FindByClientID(ctx, clientID)
+	if err != nil {
+		return "", errcode.Wrap(errcode.Internal, "查询应用失败", err)
+	}
+	if app == nil {
+		return "", errcode.New(errcode.NotFound, "应用不存在")
+	}
+	if strings.TrimSpace(app.ClientSecretEnc) == "" {
+		return "", errcode.New(errcode.NotFound, "该应用密钥仅存哈希，请先轮换密钥后再查看")
+	}
+	plain, err := crypto.OpenSecret(s.secretSealKey(), app.ClientSecretEnc)
+	if err != nil {
+		return "", errcode.Wrap(errcode.Internal, "解密密钥失败", err)
+	}
+	_ = s.repos.Audit.Create(ctx, &model.AuditLog{
+		TenantID: app.TenantID, UserID: "", ClientID: clientID,
+		Action: "admin_reveal_secret", Success: true,
+		Detail: "admin revealed client_secret", CreatedAt: time.Now(),
+	})
+	return plain, nil
 }
 
 func isKnownMethod(m string) bool {

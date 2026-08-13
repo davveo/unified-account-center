@@ -62,6 +62,7 @@ type LoginDTO struct {
 	Credential map[string]string `json:"credential"`
 	Client     ClientInfo        `json:"client"`
 	Options    LoginOptions      `json:"options"`
+	InviteCode string            `json:"invite_code"`
 }
 
 type TokenDTO struct {
@@ -82,10 +83,12 @@ type IdentityView struct {
 }
 
 type UserView struct {
-	UserID      string `json:"user_id"`
-	DisplayName string `json:"display_name"`
-	Avatar      string `json:"avatar"`
-	Status      string `json:"status"`
+	UserID      string   `json:"user_id"`
+	TenantID    string   `json:"tenant_id,omitempty"`
+	DisplayName string   `json:"display_name"`
+	Avatar      string   `json:"avatar"`
+	Status      string   `json:"status"`
+	Roles       []string `json:"roles,omitempty"`
 }
 
 type LoginResult struct {
@@ -100,6 +103,13 @@ type RequestMeta struct {
 	ClientID string
 	IP       string
 	UA       string
+}
+
+func userViewOf(u *model.User, roles []string) UserView {
+	return UserView{
+		UserID: u.UserID, TenantID: u.TenantID, DisplayName: u.DisplayName,
+		Avatar: u.Avatar, Status: u.Status, Roles: append([]string{}, roles...),
+	}
 }
 
 func (s *AuthService) ListMethods(ctx context.Context, clientID string) ([]string, error) {
@@ -117,6 +127,14 @@ func (s *AuthService) Challenge(ctx context.Context, meta RequestMeta, dto Chall
 	}
 	if !methodAllowed(app, dto.Method) {
 		return nil, errcode.New(errcode.ForbiddenApp, "应用未启用该登录方式")
+	}
+	if err := s.assertLocalLoginAllowed(ctx, app, dto.Method); err != nil {
+		return nil, err
+	}
+	if dto.Method == model.MethodPhoneOTP || dto.Method == model.MethodEmailOTP {
+		if err := s.assertTenantOTPQuota(ctx, app.TenantID); err != nil {
+			return nil, err
+		}
 	}
 	auth, ok := s.auths.Get(dto.Method)
 	if !ok {
@@ -152,6 +170,9 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	}
 	if !methodAllowed(app, dto.Method) {
 		return nil, errcode.New(errcode.ForbiddenApp, "应用未启用该登录方式")
+	}
+	if err := s.assertLocalLoginAllowed(ctx, app, dto.Method); err != nil {
+		return nil, err
 	}
 	auth, ok := s.auths.Get(dto.Method)
 	if !ok {
@@ -210,6 +231,12 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	}
 
 	autoReg := app.AutoRegister
+	if dto.InviteCode != "" {
+		if err := s.validateInviteForRegister(ctx, app, dto.InviteCode, principal); err != nil {
+			return nil, err
+		}
+		autoReg = true
+	}
 
 	user, isNew, err := s.resolveUser(ctx, app, principal, autoReg)
 	if err != nil {
@@ -248,18 +275,17 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	if err != nil {
 		return nil, err
 	}
+	if isNew && dto.InviteCode != "" {
+		_, _ = s.repos.Invite.Consume(ctx, dto.InviteCode)
+	}
 	_ = s.rememberDevice(ctx, user.UserID, app.ClientID, dto.Client, meta)
 	s.clearLoginFailures(ctx, dto.Identity, meta.IP)
 	views, _ := s.identityViews(ctx, user.UserID)
+	roles, _ := s.rolesForUser(ctx, user.UserID, app.TenantID)
 	s.audit(ctx, app, user.UserID, "login_ok", true, dto.Method, meta)
 	observability.IncLogin(true)
 	return &LoginResult{
-		User: UserView{
-			UserID:      user.UserID,
-			DisplayName: user.DisplayName,
-			Avatar:      user.Avatar,
-			Status:      user.Status,
-		},
+		User:       userViewOf(user, roles),
 		Identities: views,
 		Token:      *token,
 		IsNewUser:  isNew,
@@ -355,13 +381,9 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*LoginResult, erro
 		return nil, errcode.New(errcode.NotFound, "用户不存在")
 	}
 	views, _ := s.identityViews(ctx, userID)
+	roles, _ := s.rolesForUser(ctx, userID, user.TenantID)
 	return &LoginResult{
-		User: UserView{
-			UserID:      user.UserID,
-			DisplayName: user.DisplayName,
-			Avatar:      user.Avatar,
-			Status:      user.Status,
-		},
+		User:       userViewOf(user, roles),
 		Identities: views,
 	}, nil
 }
@@ -387,6 +409,8 @@ func (s *AuthService) Introspect(ctx context.Context, token string) (map[string]
 		"user_id":   claims.UserID,
 		"client_id": claims.ClientID,
 		"tenant_id": claims.TenantID,
+		"roles":     claims.Roles,
+		"scope":     claims.Scope,
 		"exp":       exp,
 		"jti":       claims.ID,
 	}, nil
@@ -707,7 +731,14 @@ func (s *AuthService) resolveUser(ctx context.Context, app *model.App, principal
 		return user, false, nil
 	}
 	if !autoReg {
-		return nil, false, errcode.New(errcode.NotFound, "用户不存在")
+		reqID, err := s.createJoinRequest(ctx, app, principal)
+		if err != nil {
+			return nil, false, err
+		}
+		return nil, false, errcode.NewWithData(errcode.PendingApproval, "用户不存在，已提交入驻申请，等待审批", map[string]interface{}{
+			"join_request_id": reqID,
+			"status":          model.JoinPending,
+		})
 	}
 
 	userID := idgen.New("u")
@@ -753,7 +784,55 @@ func (s *AuthService) resolveUser(ctx context.Context, app *model.App, principal
 			ProfileJSON: string(raw),
 		})
 	}
+	_ = s.repos.Role.Upsert(ctx, &model.RoleBinding{UserID: userID, TenantID: app.TenantID, Role: model.RoleUser})
 	return user, true, nil
+}
+
+func (s *AuthService) createJoinRequest(ctx context.Context, app *model.App, principal *authenticator.IdentityPrincipal) (string, error) {
+	raw, _ := json.Marshal(principal.Profile)
+	reqID := idgen.New("jr")
+	err := s.repos.Join.Create(ctx, &model.JoinRequest{
+		RequestID: reqID, TenantID: app.TenantID, ClientID: app.ClientID,
+		Method: "", Identity: principal.Identifier, Provider: principal.Provider,
+		IdType: principal.Type, Identifier: principal.Identifier,
+		ProfileJSON: string(raw), Status: model.JoinPending,
+	})
+	if err != nil {
+		return "", errcode.Wrap(errcode.Internal, "创建入驻申请失败", err)
+	}
+	return reqID, nil
+}
+
+func (s *AuthService) validateInviteForRegister(ctx context.Context, app *model.App, code string, principal *authenticator.IdentityPrincipal) error {
+	inv, err := s.repos.Invite.FindByCode(ctx, code)
+	if err != nil {
+		return errcode.Wrap(errcode.Internal, "查询邀请失败", err)
+	}
+	if inv == nil || inv.Status != model.InviteStatusActive {
+		return errcode.New(errcode.InvalidCred, "邀请码无效")
+	}
+	if inv.ExpireAt != nil && inv.ExpireAt.Before(time.Now()) {
+		return errcode.New(errcode.InvalidCred, "邀请码已过期")
+	}
+	if inv.UsedCount >= inv.MaxUses {
+		return errcode.New(errcode.InvalidCred, "邀请码已用尽")
+	}
+	if inv.TenantID != "" && inv.TenantID != app.TenantID {
+		return errcode.New(errcode.ForbiddenApp, "邀请码与应用租户不匹配")
+	}
+	if inv.ClientID != "" && inv.ClientID != app.ClientID {
+		return errcode.New(errcode.ForbiddenApp, "邀请码与应用不匹配")
+	}
+	if inv.Email != "" && principal.Type == model.IdentityEmail && !strings.EqualFold(inv.Email, principal.Identifier) {
+		return errcode.New(errcode.ForbiddenApp, "邀请码仅限指定邮箱")
+	}
+	if inv.Phone != "" && principal.Type == model.IdentityPhone {
+		norm, _ := identity.NormalizePhone(inv.Phone)
+		if norm != "" && norm != principal.Identifier {
+			return errcode.New(errcode.ForbiddenApp, "邀请码仅限指定手机号")
+		}
+	}
+	return nil
 }
 
 func defaultDisplay(p *authenticator.IdentityPrincipal) string {
@@ -780,7 +859,8 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 		refreshTTL = s.cfg.JWT.RefreshDuration()
 	}
 
-	access, _, _, err := s.jwt.IssueAccess(user.UserID, app.ClientID, app.TenantID, accessTTL)
+	roles, scope := s.rolesForUser(ctx, user.UserID, app.TenantID)
+	access, _, _, err := s.jwt.IssueAccess(user.UserID, app.ClientID, app.TenantID, accessTTL, roles, scope)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "签发 access_token 失败", err)
 	}

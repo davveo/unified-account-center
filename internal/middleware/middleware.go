@@ -125,15 +125,45 @@ func AccessTTLFromCtx(c *gin.Context) time.Duration {
 	return time.Hour
 }
 
-// AdminAuth 管理后台简易鉴权（仅接受 Header，禁止 query 传参）。
-func AdminAuth(token string) gin.HandlerFunc {
+// AdminAuth 管理后台鉴权：接受 X-Admin-Token，或 Bearer JWT（含 platform_admin / tenant_admin / operator / viewer）。
+func AdminAuth(token string, jwtMgr *jwtutil.Manager, redis *redisx.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		got := c.GetHeader("X-Admin-Token")
-		if token == "" || got == "" || got != token {
-			response.Fail(c, errcode.Unauthorized, "管理 Token 无效")
-			c.Abort()
+		if token != "" && got != "" && got == token {
+			c.Set(CtxAdminRole, "platform_admin")
+			c.Set(CtxAdminTenant, "")
+			c.Next()
 			return
 		}
-		c.Next()
+		// 兼容角色 JWT
+		h := c.GetHeader("Authorization")
+		if jwtMgr != nil && strings.HasPrefix(h, "Bearer ") {
+			tok := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+			claims, err := jwtMgr.ParseAccess(tok)
+			if err == nil {
+				if redis != nil {
+					if bl, _ := redis.IsAccessBlacklisted(c.Request.Context(), claims.ID); bl {
+						response.Fail(c, errcode.Unauthorized, "Token 已失效")
+						c.Abort()
+						return
+					}
+				}
+				if service.HasAdminCapability(claims.Roles, "read") {
+					c.Set(CtxUserID, claims.UserID)
+					c.Set(CtxAdminRole, strings.Join(claims.Roles, ","))
+					c.Set(CtxAdminTenant, claims.TenantID)
+					c.Set(CtxTenantID, claims.TenantID)
+					c.Next()
+					return
+				}
+			}
+		}
+		response.Fail(c, errcode.Unauthorized, "管理 Token 无效")
+		c.Abort()
 	}
 }
+
+const (
+	CtxAdminRole   = "admin_role"
+	CtxAdminTenant = "admin_tenant"
+)

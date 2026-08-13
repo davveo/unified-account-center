@@ -17,9 +17,11 @@ import (
 )
 
 type Claims struct {
-	UserID   string `json:"uid"`
-	ClientID string `json:"cid"`
-	TenantID string `json:"tid"`
+	UserID   string   `json:"uid"`
+	ClientID string   `json:"cid"`
+	TenantID string   `json:"tid"`
+	Roles    []string `json:"roles,omitempty"`
+	Scope    string   `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -106,14 +108,18 @@ func NewManager(secret, issuer string) *Manager {
 func (m *Manager) Alg() string { return m.alg }
 func (m *Manager) Kid() string { return m.kid }
 
-func (m *Manager) IssueAccess(userID,
-	clientID, tenantID string, ttl time.Duration) (token string, jti string, exp time.Time, err error) {
+func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Duration, roles []string, scope string) (token string, jti string, exp time.Time, err error) {
 	jti = idgen.New("at")
 	exp = time.Now().Add(ttl)
+	if roles == nil {
+		roles = []string{}
+	}
 	claims := Claims{
 		UserID:   userID,
 		ClientID: clientID,
 		TenantID: tenantID,
+		Roles:    append([]string{}, roles...),
+		Scope:    scope,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.issuer,
 			Subject:   userID,

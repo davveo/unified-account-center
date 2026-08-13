@@ -540,3 +540,20 @@ func (h *AuthHandler) MergeConfirm(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"ok": true})
 }
+
+func (h *AuthHandler) DiscoverSSO(c *gin.Context) {
+	email := c.Query("email")
+	if email == "" {
+		var body struct {
+			Email string `json:"email"`
+		}
+		_ = c.ShouldBindJSON(&body)
+		email = body.Email
+	}
+	res, err := h.auth.DiscoverSSO(c.Request.Context(), h.meta(c).ClientID, email)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}

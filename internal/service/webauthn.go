@@ -214,10 +214,10 @@ func (s *AuthService) PasskeyLoginFinish(ctx context.Context, meta RequestMeta, 
 	_ = s.rememberDevice(ctx, u.UserID, app.ClientID, client, meta)
 	s.clearLoginFailures(ctx, u.UserID, meta.IP)
 	views, _ := s.identityViews(ctx, u.UserID)
+	roles, _ := s.rolesForUser(ctx, u.UserID, app.TenantID)
 	s.audit(ctx, app, u.UserID, "login_ok", true, "passkey", meta)
 	return &LoginResult{
-		User: UserView{UserID: u.UserID, DisplayName: u.DisplayName, Avatar: u.Avatar, Status: u.Status},
-		Identities: views, Token: *token,
+		User: userViewOf(u, roles), Identities: views, Token: *token,
 	}, nil
 }
 

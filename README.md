@@ -128,6 +128,10 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
 - Passkey：`/passkey/register|login` + 列表吊销；配置 `webauthn.*`
 - 账号合并：绑定冲突引导 `/merge/start|confirm`；Admin 人工合并
 - 风控：失败锁定、新设备 MFA、设备指纹、告警 webhook；Admin `/risk/unlock`
+- 多租户：租户 CRUD / 应用与发码配额；`GET /admin/apps?tenant_id=`
+- 企业 SSO：域名 → IdP（`/auth/sso/discover`），强制 SSO / 禁本地密码
+- 邀请与审批：`invite_code`、入驻申请 `40320`、Admin 建用户
+- RBAC：角色绑定写入 JWT `roles`/`scope`；Admin 支持 Token 或管理角色 Bearer
 ## SDK
 
 见 [sdk/README.md](sdk/README.md)。

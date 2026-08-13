@@ -1,6 +1,8 @@
 package crypto
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -84,4 +86,60 @@ func HashSecret(secret string) (string, error) {
 
 func VerifySecret(hash, secret string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(secret)) == nil
+}
+
+// SealSecret AES-GCM 加密明文（供管理后台可逆查看）；keyMaterial 建议用 jwt.secret。
+func SealSecret(keyMaterial, plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+	key := deriveKey(keyMaterial)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	out := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.RawStdEncoding.EncodeToString(out), nil
+}
+
+// OpenSecret 解密 SealSecret 产物。
+func OpenSecret(keyMaterial, sealed string) (string, error) {
+	if sealed == "" {
+		return "", fmt.Errorf("empty sealed secret")
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(sealed)
+	if err != nil {
+		return "", err
+	}
+	key := deriveKey(keyMaterial)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) < gcm.NonceSize() {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+	nonce, ct := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
+	pt, err := gcm.Open(nil, nonce, ct, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(pt), nil
+}
+
+func deriveKey(material string) []byte {
+	sum := sha256.Sum256([]byte("uac-client-secret:" + material))
+	return sum[:]
 }

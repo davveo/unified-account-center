@@ -103,6 +103,7 @@ func New(cfg *config.Config) (*Application, error) {
 	oauthSvc := service.NewOAuthService(repos, oauthReg, authSvc, rdb)
 	authSvc.SetOAuth(oauthSvc)
 	adminSvc := service.NewAdminService(cfg, repos, oauthReg, rdb)
+	_ = adminSvc.EnsureDefaultTenant(context.Background())
 	h := handler.NewAuthHandler(authSvc, oauthSvc)
 	adminH := handler.NewAdminHandler(adminSvc)
 
@@ -194,15 +195,23 @@ func bootstrapApp(ctx context.Context, cfg *config.Config, repos *repository.Rep
 		return err
 	}
 	if existing != nil {
+		if existing.ClientSecretEnc == "" && crypto.VerifySecret(existing.ClientSecretHash, cfg.Bootstrap.DefaultClientSecret) {
+			if enc, err := crypto.SealSecret(cfg.JWT.Secret, cfg.Bootstrap.DefaultClientSecret); err == nil {
+				existing.ClientSecretEnc = enc
+				_ = repos.App.Update(ctx, existing)
+			}
+		}
 		return nil
 	}
 	hash, err := crypto.HashSecret(cfg.Bootstrap.DefaultClientSecret)
 	if err != nil {
 		return err
 	}
+	enc, _ := crypto.SealSecret(cfg.JWT.Secret, cfg.Bootstrap.DefaultClientSecret)
 	appRow := &model.App{
 		ClientID:         cfg.Bootstrap.DefaultClientID,
 		ClientSecretHash: hash,
+		ClientSecretEnc:  enc,
 		Name:             "Demo App",
 		TenantID:         "default",
 		AllowedMethods:   cfg.Bootstrap.DefaultAllowedMethods,

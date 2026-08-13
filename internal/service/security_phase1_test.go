@@ -40,8 +40,13 @@ func TestAutoRegisterNotOverridableByClient(t *testing.T) {
 		},
 		// 即便旧客户端传 options，也不应生效（字段已移除）
 	})
-	if !errcode.Is(err, errcode.NotFound) {
-		t.Fatalf("expect not found when auto_register=false, got %v", err)
+	if !errcode.Is(err, errcode.PendingApproval) && !errcode.Is(err, errcode.NotFound) {
+		t.Fatalf("expect pending approval or not found when auto_register=false, got %v", err)
+	}
+	if ae, ok := errcode.AsAppError(err); ok && ae.Code == errcode.PendingApproval {
+		if ae.Data == nil {
+			t.Fatal("expect join_request hint")
+		}
 	}
 }
 

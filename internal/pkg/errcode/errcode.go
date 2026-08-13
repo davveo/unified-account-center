@@ -9,6 +9,7 @@ const (
 	Unauthorized    = 40100
 	InvalidCred     = 40110
 	ForbiddenApp    = 40310
+	PendingApproval = 40320
 	ConflictAccount = 40910
 	MFARequired     = 40120
 	RateLimited     = 42900
@@ -22,6 +23,7 @@ var messages = map[int]string{
 	Unauthorized:    "未登录",
 	InvalidCred:     "凭证无效",
 	ForbiddenApp:    "应用无权限",
+	PendingApproval: "等待审批入驻",
 	ConflictAccount: "账户冲突",
 	MFARequired:     "需要二次验证",
 	RateLimited:     "请求过于频繁",

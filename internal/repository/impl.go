@@ -242,16 +242,20 @@ func (r *appRepo) FindByClientID(ctx context.Context, clientID string) (*model.A
 	return &app, err
 }
 
-func (r *appRepo) List(ctx context.Context, limit, offset int) ([]model.App, int64, error) {
+func (r *appRepo) List(ctx context.Context, tenantID string, limit, offset int) ([]model.App, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	q := r.db.WithContext(ctx).Model(&model.App{})
+	if tenantID != "" {
+		q = q.Where("tenant_id = ?", tenantID)
+	}
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.App{}).Count(&total).Error; err != nil {
+	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var list []model.App
-	err := r.db.WithContext(ctx).Order("id desc").Limit(limit).Offset(offset).Find(&list).Error
+	err := q.Order("id desc").Limit(limit).Offset(offset).Find(&list).Error
 	return list, total, err
 }
 

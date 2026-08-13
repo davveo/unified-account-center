@@ -35,7 +35,7 @@ func FailData(c *gin.Context, code int, msg string, data interface{}) {
 	switch code {
 	case errcode.Unauthorized, errcode.InvalidCred, errcode.MFARequired:
 		status = http.StatusUnauthorized
-	case errcode.ForbiddenApp:
+	case errcode.ForbiddenApp, errcode.PendingApproval:
 		status = http.StatusForbidden
 	case errcode.RateLimited:
 		status = http.StatusTooManyRequests

@@ -53,7 +53,7 @@ type ChallengeRepo interface {
 type AppRepo interface {
 	Create(ctx context.Context, app *model.App) error
 	FindByClientID(ctx context.Context, clientID string) (*model.App, error)
-	List(ctx context.Context, limit, offset int) ([]model.App, int64, error)
+	List(ctx context.Context, tenantID string, limit, offset int) ([]model.App, int64, error)
 	Update(ctx context.Context, app *model.App) error
 }
 
@@ -101,6 +101,11 @@ type Repos struct {
 	Audit      AuditRepo
 	WebAuthn   WebAuthnRepo
 	Device     KnownDeviceRepo
+	Tenant     TenantRepo
+	IdP        EnterpriseIdPRepo
+	Invite     InviteRepo
+	Join       JoinRequestRepo
+	Role       RoleRepo
 }
 
 func NewRepos(db *gorm.DB) *Repos {
@@ -116,6 +121,11 @@ func NewRepos(db *gorm.DB) *Repos {
 		Audit:      NewAuditRepo(db),
 		WebAuthn:   NewWebAuthnRepo(db),
 		Device:     NewKnownDeviceRepo(db),
+		Tenant:     NewTenantRepo(db),
+		IdP:        NewEnterpriseIdPRepo(db),
+		Invite:     NewInviteRepo(db),
+		Join:       NewJoinRequestRepo(db),
+		Role:       NewRoleRepo(db),
 	}
 }
 
@@ -133,5 +143,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.OAuthProviderRow{},
 		&model.WebAuthnCredential{},
 		&model.KnownDevice{},
+		&model.Tenant{},
+		&model.EnterpriseIdP{},
+		&model.Invite{},
+		&model.JoinRequest{},
+		&model.RoleBinding{},
 	)
 }

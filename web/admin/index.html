@@ -4,202 +4,342 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>统一账户中台 · 管理后台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: "#0f172a",
+            mist: "#64748b",
+            line: "#e2e8f0",
+            panel: "#ffffff",
+            canvas: "#f1f5f9",
+            brand: { DEFAULT: "#0f766e", soft: "#ccfbf1", ink: "#f0fdfa" },
+          },
+          fontFamily: {
+            sans: ["IBM Plex Sans", "Noto Sans SC", "ui-sans-serif", "system-ui", "sans-serif"],
+            mono: ["IBM Plex Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+          },
+          boxShadow: {
+            panel: "0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06)",
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/admin/static/style.css" />
 </head>
-<body>
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">UAC</div>
-        <div>
-          <div class="brand-title">账户中台</div>
-          <div class="brand-sub">Admin Console</div>
+<body class="min-h-screen bg-canvas font-sans text-ink antialiased">
+  <div class="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
+    <aside class="border-b border-line bg-panel/90 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
+      <div class="flex h-full flex-col gap-6 p-5">
+        <div class="flex items-center gap-3">
+          <div class="grid h-10 w-10 place-items-center rounded-xl bg-brand font-bold tracking-wide text-brand-ink">UAC</div>
+          <div>
+            <div class="text-base font-semibold">账户中台</div>
+            <div class="text-xs text-mist">Admin Console</div>
+          </div>
         </div>
-      </div>
-      <nav class="nav">
-        <button class="nav-item active" data-view="apps">应用凭证</button>
-        <button class="nav-item" data-view="channels">对接渠道</button>
-        <button class="nav-item" data-view="users">用户管理</button>
-        <button class="nav-item" data-view="audits">审计日志</button>
-        <button class="nav-item" data-view="playground">渠道测试</button>
-      </nav>
-      <div class="sidebar-foot">
-        <label class="field-label">Admin Token</label>
-        <input id="adminToken" type="password" placeholder="X-Admin-Token" />
-        <button id="saveToken" class="btn btn-ghost">保存</button>
+
+        <nav class="flex flex-col gap-1">
+          <button type="button" class="nav-item active" data-view="apps">应用凭证</button>
+          <button type="button" class="nav-item" data-view="tenants">租户管理</button>
+          <button type="button" class="nav-item" data-view="channels">对接渠道</button>
+          <button type="button" class="nav-item" data-view="users">用户管理</button>
+          <button type="button" class="nav-item" data-view="invites">邀请 / 入驻</button>
+          <button type="button" class="nav-item" data-view="roles">角色权限</button>
+          <button type="button" class="nav-item" data-view="audits">审计日志</button>
+          <button type="button" class="nav-item" data-view="playground">渠道测试</button>
+        </nav>
+
+        <div class="mt-auto space-y-2 border-t border-line pt-4">
+          <label class="field-label" for="adminToken">Admin Token</label>
+          <input id="adminToken" type="password" class="input" placeholder="X-Admin-Token" />
+          <button id="saveToken" type="button" class="btn btn-ghost w-full">保存 Token</button>
+        </div>
       </div>
     </aside>
 
-    <main class="main">
-      <header class="topbar">
-        <h1 id="pageTitle">应用凭证</h1>
-        <p id="pageDesc">创建 client_id / client_secret，管理接入应用</p>
+    <main class="px-4 py-6 sm:px-6 lg:px-8">
+      <header class="mb-6">
+        <h1 id="pageTitle" class="text-2xl font-semibold tracking-tight sm:text-3xl">应用凭证</h1>
+        <p id="pageDesc" class="mt-1 text-sm text-mist">创建 client_id / client_secret，管理接入应用</p>
       </header>
 
       <!-- Apps -->
-      <section id="view-apps" class="view active">
-        <div class="grid-2">
+      <section id="view-apps" class="view active space-y-4">
+        <div class="grid gap-4 xl:grid-cols-[380px_1fr]">
           <article class="panel">
-            <h2>创建应用</h2>
-            <form id="createAppForm" class="form">
-              <label>应用名称 *</label>
-              <input name="name" required placeholder="例如：商城 App" />
-
-              <label>自定义 client_id（可选）</label>
-              <input name="client_id" placeholder="空则自动生成 app_xxx" />
-
-              <label>自定义 client_secret（可选）</label>
-              <input name="client_secret" placeholder="空则自动生成，仅创建时展示一次" />
-
-              <label>启用登录方式</label>
-              <div class="checks" id="methodChecks"></div>
-
-              <label>Redirect URIs（每行一个）</label>
-              <textarea name="redirect_uris" rows="3" placeholder="http://localhost:3000/callback"></textarea>
-
-              <label class="inline">
-                <input type="checkbox" name="auto_register" checked />
+            <h2 class="panel-title">创建应用</h2>
+            <form id="createAppForm" class="mt-4 space-y-3">
+              <div>
+                <label class="field-label">应用名称 *</label>
+                <input class="input" name="name" required placeholder="例如：商城 App" />
+              </div>
+              <div>
+                <label class="field-label">所属租户 tenant_id</label>
+                <input class="input" name="tenant_id" placeholder="default" value="default" />
+              </div>
+              <div>
+                <label class="field-label">自定义 client_id（可选）</label>
+                <input class="input" name="client_id" placeholder="空则自动生成 app_xxx" />
+              </div>
+              <div>
+                <label class="field-label">自定义 client_secret（可选）</label>
+                <input class="input" name="client_secret" placeholder="空则自动生成" />
+              </div>
+              <div>
+                <label class="field-label">启用登录方式</label>
+                <div class="mt-2 grid gap-2" id="methodChecks"></div>
+              </div>
+              <div>
+                <label class="field-label">Redirect URIs（每行一个）</label>
+                <textarea class="input min-h-[84px]" name="redirect_uris" rows="3" placeholder="http://localhost:3000/callback"></textarea>
+              </div>
+              <label class="inline-flex items-center gap-2 text-sm text-ink">
+                <input type="checkbox" name="auto_register" checked class="rounded border-line text-brand focus:ring-brand" />
                 允许自动注册
               </label>
-
-              <button type="submit" class="btn btn-primary">创建并生成凭证</button>
+              <button type="submit" class="btn btn-primary w-full">创建并生成凭证</button>
             </form>
-            <div id="createResult" class="result hidden"></div>
+            <div id="createResult" class="result mt-4 hidden"></div>
           </article>
 
           <article class="panel">
-            <div class="panel-head">
-              <h2>应用列表</h2>
-              <button id="refreshApps" class="btn btn-ghost">刷新</button>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">应用列表</h2>
+              <button id="refreshApps" type="button" class="btn btn-ghost">刷新</button>
             </div>
-            <div id="appsTable" class="table-wrap">加载中…</div>
+            <div id="appsTable" class="mt-4">加载中…</div>
           </article>
         </div>
+      </section>
+
+      <!-- Tenants -->
+      <section id="view-tenants" class="view space-y-4">
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">租户列表</h2>
+            <div class="action-row">
+              <button id="btnCreateTenant" type="button" class="btn btn-primary">新建租户</button>
+              <button id="refreshTenants" type="button" class="btn btn-ghost">刷新</button>
+            </div>
+          </div>
+          <div id="tenantsTable" class="mt-4">加载中…</div>
+        </article>
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">企业 SSO IdP</h2>
+            <button id="btnUpsertIdP" type="button" class="btn btn-ghost">新增 / 更新域名路由</button>
+          </div>
+          <div id="idpTable" class="mt-4">加载中…</div>
+        </article>
       </section>
 
       <!-- Channels -->
       <section id="view-channels" class="view">
         <article class="panel">
-          <h2>平台支持的对接渠道</h2>
-          <p class="muted">以下为认证中台已实现的登录方式（Authenticator 插件）。应用侧通过 <code>allowed_methods</code> 按需启用。</p>
-          <div id="channelsGrid" class="cards">加载中…</div>
+          <h2 class="panel-title">平台支持的对接渠道</h2>
+          <p class="mt-2 text-sm text-mist">以下为认证中台已实现的登录方式。应用侧通过 <code class="font-mono text-xs">allowed_methods</code> 按需启用。</p>
+          <div id="channelsGrid" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">加载中…</div>
         </article>
       </section>
 
       <!-- Users -->
-      <section id="view-users" class="view">
+      <section id="view-users" class="view space-y-4">
         <article class="panel">
-          <div class="panel-head">
-            <h2>用户管理</h2>
-            <div>
-              <input id="userQuery" placeholder="搜索 user_id / 昵称" style="width:200px;margin-right:8px;padding:8px;border:1px solid var(--line);border-radius:8px;" />
-              <button id="refreshUsers" class="btn btn-ghost">刷新</button>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 class="panel-title">用户管理</h2>
+            <div class="flex flex-wrap items-center gap-2">
+              <input id="userQuery" class="input w-full sm:w-56" placeholder="搜索 user_id / 昵称" />
+              <button id="refreshUsers" type="button" class="btn btn-ghost">刷新</button>
             </div>
           </div>
-          <div id="usersTable" class="table-wrap">加载中…</div>
+          <div id="usersTable" class="mt-4 overflow-x-auto">加载中…</div>
         </article>
-        <article class="panel" style="margin-top:16px;">
-          <h2>风控解锁</h2>
-          <form id="unlockRiskForm" class="form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-            <div>
-              <label>类型</label>
-              <select id="unlockKind" name="kind">
+        <article class="panel">
+          <h2 class="panel-title">风控解锁</h2>
+          <form id="unlockRiskForm" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div class="sm:w-40">
+              <label class="field-label" for="unlockKind">类型</label>
+              <select id="unlockKind" name="kind" class="input">
                 <option value="id">账号 identity</option>
                 <option value="ip">IP</option>
               </select>
             </div>
-            <div style="flex:1;min-width:180px;">
-              <label>Key</label>
-              <input id="unlockKey" name="key" required placeholder="手机号/邮箱 或 IP" />
+            <div class="min-w-0 flex-1">
+              <label class="field-label" for="unlockKey">Key</label>
+              <input id="unlockKey" name="key" class="input" required placeholder="手机号/邮箱 或 IP" />
             </div>
-            <button type="submit" class="btn btn-primary">解除锁定</button>
+            <button type="submit" class="btn btn-primary shrink-0">解除锁定</button>
           </form>
+        </article>
+      </section>
+
+      <!-- Invites -->
+      <section id="view-invites" class="view space-y-4">
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">邀请码</h2>
+            <div class="action-row">
+              <button id="btnCreateInvite" type="button" class="btn btn-primary">创建邀请</button>
+              <button id="refreshInvites" type="button" class="btn btn-ghost">刷新</button>
+            </div>
+          </div>
+          <div id="invitesTable" class="mt-4">加载中…</div>
+        </article>
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">入驻审批</h2>
+            <button id="refreshJoins" type="button" class="btn btn-ghost">刷新</button>
+          </div>
+          <div id="joinsTable" class="mt-4">加载中…</div>
+        </article>
+        <article class="panel">
+          <h2 class="panel-title">管理员建用户</h2>
+          <button id="btnCreateUser" type="button" class="btn btn-primary mt-3">创建用户并下发初始密码</button>
+        </article>
+      </section>
+
+      <!-- Roles -->
+      <section id="view-roles" class="view space-y-4">
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">角色绑定</h2>
+            <div class="action-row">
+              <button id="btnAssignRole" type="button" class="btn btn-primary">分配角色</button>
+              <button id="refreshRoles" type="button" class="btn btn-ghost">刷新</button>
+            </div>
+          </div>
+          <p class="mt-2 text-sm text-mist">角色：platform_admin / tenant_admin / operator / viewer / user。Access Token 会写入 roles 与 scope claim。管理 API 可用 X-Admin-Token 或带管理角色的 Bearer JWT。</p>
+          <div id="rolesTable" class="mt-4">加载中…</div>
         </article>
       </section>
 
       <!-- Audits -->
       <section id="view-audits" class="view">
         <article class="panel">
-          <div class="panel-head">
-            <h2>审计日志</h2>
-            <div>
-              <input id="auditUser" placeholder="user_id" style="width:140px;margin-right:6px;padding:8px;border:1px solid var(--line);border-radius:8px;" />
-              <input id="auditAction" placeholder="action" style="width:120px;margin-right:6px;padding:8px;border:1px solid var(--line);border-radius:8px;" />
-              <button id="refreshAudits" class="btn btn-ghost">查询</button>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 class="panel-title">审计日志</h2>
+            <div class="flex flex-wrap items-center gap-2">
+              <input id="auditUser" class="input w-36" placeholder="user_id" />
+              <input id="auditAction" class="input w-32" placeholder="action" />
+              <button id="refreshAudits" type="button" class="btn btn-ghost">查询</button>
             </div>
           </div>
-          <div id="auditsTable" class="table-wrap">加载中…</div>
+          <div id="auditsTable" class="mt-4 overflow-x-auto">加载中…</div>
         </article>
       </section>
 
       <!-- Playground -->
       <section id="view-playground" class="view">
-        <div class="grid-2">
+        <div class="grid gap-4 xl:grid-cols-2">
           <article class="panel">
-            <h2>测试配置</h2>
-            <div class="form">
-              <label>选择应用 client_id</label>
-              <select id="testClientId"></select>
-
-              <label>client_secret（可选，服务端调用建议带上）</label>
-              <input id="testClientSecret" type="password" placeholder="可选" />
-
-              <label>测试渠道</label>
-              <select id="testMethod"></select>
-
-              <div id="oauthProviderRow" class="hidden">
-                <label>OAuth Provider</label>
-                <select id="testProvider"></select>
-                <label>redirect_uri</label>
-                <input id="testRedirectUri" value="http://localhost:3000/callback" />
+            <h2 class="panel-title">测试配置</h2>
+            <div class="mt-4 space-y-3">
+              <div>
+                <label class="field-label" for="testClientId">选择应用 client_id</label>
+                <select id="testClientId" class="input"></select>
               </div>
-
-              <label id="identityLabel">手机号 / 邮箱</label>
-              <input id="testIdentity" placeholder="13800138000 或 user@example.com" />
-
-              <div id="otpBlock">
+              <div>
+                <label class="field-label" for="testClientSecret">client_secret（可选）</label>
+                <input id="testClientSecret" type="password" class="input" placeholder="可选" />
+              </div>
+              <div>
+                <label class="field-label" for="testMethod">测试渠道</label>
+                <select id="testMethod" class="input"></select>
+              </div>
+              <div id="oauthProviderRow" class="hidden space-y-3">
+                <div>
+                  <label class="field-label" for="testProvider">OAuth Provider</label>
+                  <select id="testProvider" class="input"></select>
+                </div>
+                <div>
+                  <label class="field-label" for="testRedirectUri">redirect_uri</label>
+                  <input id="testRedirectUri" class="input" value="http://localhost:3000/callback" />
+                </div>
+              </div>
+              <div>
+                <label class="field-label" id="identityLabel" for="testIdentity">手机号 / 邮箱</label>
+                <input id="testIdentity" class="input" placeholder="13800138000 或 user@example.com" />
+              </div>
+              <div id="otpBlock" class="space-y-3">
                 <button id="btnChallenge" type="button" class="btn btn-ghost">1. 发送验证码</button>
-                <label>challenge_id</label>
-                <input id="testChallengeId" readonly placeholder="发码后自动填充" />
-                <label>验证码 OTP</label>
-                <input id="testOTP" placeholder="开发环境请看服务日志 [mock-sms]/[mock-email]" />
+                <div>
+                  <label class="field-label" for="testChallengeId">challenge_id</label>
+                  <input id="testChallengeId" class="input" readonly placeholder="发码后自动填充" />
+                </div>
+                <div>
+                  <label class="field-label" for="testOTP">验证码 OTP</label>
+                  <input id="testOTP" class="input" placeholder="开发环境请看服务日志" />
+                </div>
               </div>
-
               <div id="pwdBlock" class="hidden">
-                <label>密码</label>
-                <input id="testPassword" type="password" placeholder="Passw0rd1" />
+                <label class="field-label" for="testPassword">密码</label>
+                <input id="testPassword" type="password" class="input" placeholder="Passw0rd1" />
               </div>
-
-              <div id="oauthBlock" class="hidden">
+              <div id="oauthBlock" class="hidden space-y-3">
                 <button id="btnOAuthStart" type="button" class="btn btn-ghost">获取授权 URL</button>
-                <label>authorize_url</label>
-                <input id="testAuthURL" readonly />
-                <label>授权码 code</label>
-                <input id="testOAuthCode" placeholder="从回调拿到的 code" />
-                <label>PKCE code_verifier（可选）</label>
-                <input id="testCodeVerifier" />
+                <div>
+                  <label class="field-label" for="testAuthURL">authorize_url</label>
+                  <input id="testAuthURL" class="input" readonly />
+                </div>
+                <div>
+                  <label class="field-label" for="testOAuthCode">授权码 code</label>
+                  <input id="testOAuthCode" class="input" placeholder="从回调拿到的 code" />
+                </div>
+                <div>
+                  <label class="field-label" for="testCodeVerifier">PKCE code_verifier（可选）</label>
+                  <input id="testCodeVerifier" class="input" />
+                </div>
               </div>
-
-              <button id="btnLogin" type="button" class="btn btn-primary">2. 执行登录</button>
+              <button id="btnLogin" type="button" class="btn btn-primary w-full">2. 执行登录</button>
             </div>
           </article>
 
           <article class="panel">
-            <h2>响应结果</h2>
-            <pre id="testOutput" class="codeblock">等待操作…</pre>
-            <div id="tokenBox" class="token-box hidden">
-              <div><strong>access_token</strong></div>
-              <textarea id="accessTokenOut" rows="3" readonly></textarea>
-              <div><strong>refresh_token</strong></div>
-              <textarea id="refreshTokenOut" rows="2" readonly></textarea>
-              <button id="btnMe" type="button" class="btn btn-ghost">调用 /me</button>
-              <button id="btnRefresh" type="button" class="btn btn-ghost">刷新 Token</button>
+            <h2 class="panel-title">响应结果</h2>
+            <pre id="testOutput" class="codeblock mt-4">等待操作…</pre>
+            <div id="tokenBox" class="mt-4 hidden space-y-3">
+              <div>
+                <div class="field-label mb-1">access_token</div>
+                <textarea id="accessTokenOut" rows="3" class="input font-mono text-xs" readonly></textarea>
+              </div>
+              <div>
+                <div class="field-label mb-1">refresh_token</div>
+                <textarea id="refreshTokenOut" rows="2" class="input font-mono text-xs" readonly></textarea>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="btnMe" type="button" class="btn btn-ghost">调用 /me</button>
+                <button id="btnRefresh" type="button" class="btn btn-ghost">刷新 Token</button>
+              </div>
             </div>
           </article>
         </div>
       </section>
     </main>
   </div>
+
+  <!-- Modal root -->
+  <div id="modalRoot" class="modal-root hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-dismiss></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h3 id="modalTitle" class="modal-title">提示</h3>
+        <button type="button" class="modal-close" data-modal-dismiss aria-label="关闭">×</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalFoot" class="modal-foot"></div>
+    </div>
+  </div>
+
+  <!-- Toast root -->
+  <div id="toastRoot" class="toast-root" aria-live="polite"></div>
+
   <script src="/admin/static/app.js"></script>
 </body>
 </html>

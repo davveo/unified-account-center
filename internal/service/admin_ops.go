@@ -107,7 +107,12 @@ func (s *AdminService) RotateSecret(ctx context.Context, clientID string) (*Rota
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "生成密钥失败", err)
 	}
+	enc, err := crypto.SealSecret(s.secretSealKey(), secret)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "加密密钥失败", err)
+	}
 	app.ClientSecretHash = hash
+	app.ClientSecretEnc = enc
 	if err := s.repos.App.Update(ctx, app); err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "轮换密钥失败", err)
 	}

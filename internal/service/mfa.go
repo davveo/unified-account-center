@@ -174,10 +174,10 @@ func (s *AuthService) MFAComplete(ctx context.Context, meta RequestMeta, dto MFA
 	_ = s.rememberDevice(ctx, user.UserID, app.ClientID, client, meta)
 	s.clearLoginFailures(ctx, user.UserID, meta.IP)
 	views, _ := s.identityViews(ctx, user.UserID)
+	roles, _ := s.rolesForUser(ctx, user.UserID, app.TenantID)
 	s.audit(ctx, app, user.UserID, "login_ok", true, "mfa", meta)
 	return &LoginResult{
-		User: UserView{UserID: user.UserID, DisplayName: user.DisplayName, Avatar: user.Avatar, Status: user.Status},
-		Identities: views, Token: *token, IsNewUser: pending.IsNew,
+		User: userViewOf(user, roles), Identities: views, Token: *token, IsNewUser: pending.IsNew,
 	}, nil
 }
 

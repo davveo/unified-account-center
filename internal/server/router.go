@@ -112,6 +112,8 @@ func NewRouter(d Deps) *gin.Engine {
 			pub.GET("/methods", d.AuthHandler.Methods)
 			pub.POST("/challenge", d.AuthHandler.Challenge)
 			pub.POST("/login", d.AuthHandler.Login)
+			pub.POST("/sso/discover", d.AuthHandler.DiscoverSSO)
+			pub.GET("/sso/discover", d.AuthHandler.DiscoverSSO)
 			pub.POST("/token/refresh", d.AuthHandler.Refresh)
 			pub.POST("/password/reset/start", d.AuthHandler.ResetStart)
 			pub.POST("/password/reset/confirm", d.AuthHandler.ResetConfirm)
@@ -158,17 +160,19 @@ func NewRouter(d Deps) *gin.Engine {
 	}
 
 	adminAPI := r.Group("/api/v1/admin")
-	adminAPI.Use(middleware.AdminAuth(d.AdminToken))
+	adminAPI.Use(middleware.AdminAuth(d.AdminToken, d.JWT, d.Redis))
 	{
 		adminAPI.POST("/apps", d.AdminHandler.CreateApp)
 		adminAPI.GET("/apps", d.AdminHandler.ListApps)
 		adminAPI.GET("/apps/:client_id", d.AdminHandler.GetApp)
 		adminAPI.PATCH("/apps/:client_id", d.AdminHandler.UpdateApp)
 		adminAPI.POST("/apps/:client_id/rotate-secret", d.AdminHandler.RotateSecret)
+		adminAPI.GET("/apps/:client_id/secret", d.AdminHandler.RevealSecret)
 		adminAPI.GET("/channels", d.AdminHandler.ListChannels)
 		adminAPI.GET("/oauth-providers", d.AdminHandler.ListOAuthProviders)
 		adminAPI.PUT("/oauth-providers", d.AdminHandler.UpsertOAuthProvider)
 		adminAPI.GET("/users", d.AdminHandler.ListUsers)
+		adminAPI.POST("/users", d.AdminHandler.CreateUser)
 		adminAPI.POST("/users/:user_id/status", d.AdminHandler.SetUserStatus)
 		adminAPI.POST("/users/:user_id/force-logout", d.AdminHandler.ForceLogout)
 		adminAPI.GET("/users/:user_id/sessions", d.AdminHandler.ListUserSessions)
@@ -176,6 +180,22 @@ func NewRouter(d Deps) *gin.Engine {
 		adminAPI.POST("/users/merge", d.AdminHandler.MergeUsers)
 		adminAPI.POST("/risk/unlock", d.AdminHandler.UnlockRisk)
 		adminAPI.GET("/audits", d.AdminHandler.ListAudits)
+
+		adminAPI.POST("/tenants", d.AdminHandler.CreateTenant)
+		adminAPI.GET("/tenants", d.AdminHandler.ListTenants)
+		adminAPI.GET("/tenants/:tenant_id", d.AdminHandler.GetTenant)
+		adminAPI.PATCH("/tenants/:tenant_id", d.AdminHandler.UpdateTenant)
+		adminAPI.PUT("/enterprise-idps", d.AdminHandler.UpsertIdP)
+		adminAPI.GET("/enterprise-idps", d.AdminHandler.ListIdPs)
+		adminAPI.DELETE("/enterprise-idps/:id", d.AdminHandler.DeleteIdP)
+		adminAPI.POST("/invites", d.AdminHandler.CreateInvite)
+		adminAPI.GET("/invites", d.AdminHandler.ListInvites)
+		adminAPI.POST("/invites/:code/revoke", d.AdminHandler.RevokeInvite)
+		adminAPI.GET("/join-requests", d.AdminHandler.ListJoinRequests)
+		adminAPI.POST("/join-requests/:request_id/review", d.AdminHandler.ReviewJoin)
+		adminAPI.POST("/roles/assign", d.AdminHandler.AssignRole)
+		adminAPI.POST("/roles/revoke", d.AdminHandler.RevokeRole)
+		adminAPI.GET("/roles", d.AdminHandler.ListRoles)
 	}
 
 	return r

@@ -39,3 +39,17 @@ func TestSecretHash(t *testing.T) {
 		t.Fatal("verify secret failed")
 	}
 }
+
+func TestSealOpenSecret(t *testing.T) {
+	sealed, err := crypto.SealSecret("jwt-secret-material", "plain-client-secret")
+	if err != nil || sealed == "" {
+		t.Fatalf("seal: %v %q", err, sealed)
+	}
+	plain, err := crypto.OpenSecret("jwt-secret-material", sealed)
+	if err != nil || plain != "plain-client-secret" {
+		t.Fatalf("open: %v %q", err, plain)
+	}
+	if _, err := crypto.OpenSecret("wrong-key", sealed); err == nil {
+		t.Fatal("expect decrypt fail with wrong key")
+	}
+}

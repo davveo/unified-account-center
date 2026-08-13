@@ -69,6 +69,7 @@ Content-Type: application/json
 | 40110 | 凭证无效（验证码/密码/Refresh） |
 | 40120 | 需要 MFA 二次验证（data 含 `mfa_token`） |
 | 40310 | 应用无权限或凭证错误 |
+| 40320 | 等待审批入驻（data 含 `join_request_id`） |
 | 40400 | 资源不存在 |
 | 40910 | 账户冲突（已被其他用户绑定） |
 | 42900 | 限流 |
@@ -514,6 +515,16 @@ risk:
 - 新设备 + 已启用 MFA 时强制二次验证
 - 登录可传 `client.fingerprint` / Header `X-Device-Fingerprint`，写入 refresh 与已知设备
 - 发码日熔断与登录锁定会推送 `alert_webhook_url`
+
+## 7.10 多租户 / 企业 SSO / 邀请 / RBAC（P2）
+
+- 租户：`POST/GET/PATCH /api/v1/admin/tenants`（配额 `max_apps` / `daily_otp_limit`，`force_sso` / `disable_local_password`）
+- 企业 SSO：配置 `PUT /api/v1/admin/enterprise-idps`；登录前 `GET /api/v1/auth/sso/discover?email=a@acme.com`
+- 邀请码：Admin 创建后，登录 body 带 `invite_code` 可绕过 `auto_register=false`
+- 审批入驻：关闭自动注册时返回 `40320`，data 含 `join_request_id`；Admin 审批 `POST /join-requests/:id/review`
+- 管理员建用户：`POST /api/v1/admin/users`
+- RBAC：`POST /roles/assign`；Access Token 含 `roles` / `scope`；管理 API 可用 `X-Admin-Token` 或带管理角色的 Bearer JWT
+- SAML 2.0 暂未实现（可选能力）
 
 ## 8. 验收清单
 

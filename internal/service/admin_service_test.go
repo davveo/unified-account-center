@@ -60,7 +60,7 @@ func TestAdminCreateAndListApps(t *testing.T) {
 		t.Fatalf("expect conflict, got %v", err)
 	}
 
-	list, total, err := admin.ListApps(context.Background(), 10, 0)
+	list, total, err := admin.ListApps(context.Background(), "", 10, 0)
 	if err != nil || total < 1 || len(list) < 1 {
 		t.Fatalf("list failed: %v total=%d", err, total)
 	}

@@ -9,7 +9,7 @@ import (
 
 func TestIssueAndParse(t *testing.T) {
 	m := jwtutil.NewManager("secret", "issuer")
-	tok, jti, _, err := m.IssueAccess("u1", "c1", "default", time.Hour)
+	tok, jti, _, err := m.IssueAccess("u1", "c1", "default", time.Hour, []string{"user"}, "user")
 	if err != nil || tok == "" || jti == "" {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func TestIssueAndParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.UserID != "u1" || claims.ClientID != "c1" {
+	if claims.UserID != "u1" || claims.ClientID != "c1" || len(claims.Roles) != 1 {
 		t.Fatalf("%+v", claims)
 	}
 }
