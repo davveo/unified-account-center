@@ -169,6 +169,7 @@ email:
 ## 对接文档
 
 - 业务接入：[docs/integration.md](docs/integration.md)
+- 网关对接：[docs/gateway.md](docs/gateway.md)
 - 操作手册索引：[docs/operations.md](docs/operations.md)
   - 管理员版：[docs/operations-admin.md](docs/operations-admin.md)
   - 终端用户版：[docs/operations-user.md](docs/operations-user.md)

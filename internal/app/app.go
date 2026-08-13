@@ -64,11 +64,12 @@ func New(cfg *config.Config) (*Application, error) {
 		producer = rp
 	}
 
-	var smsSender adapter.SMSSender = sms.NewMock()
+	var baseSMS adapter.SMSSender = sms.NewMock()
 	var emailSender adapter.EmailSender = email.NewMock()
 	if cfg.SMS.Provider == "mq" {
-		smsSender = sms.NewMQ(producer, cfg.MQ.SMSTopic)
+		baseSMS = sms.NewMQ(producer, cfg.MQ.SMSTopic)
 	}
+	smsHot := sms.NewHot(baseSMS)
 	if cfg.Email.Provider == "mq" {
 		emailSender = email.NewMQ(producer, cfg.MQ.EmailTopic)
 	}
@@ -92,7 +93,7 @@ func New(cfg *config.Config) (*Application, error) {
 	}
 
 	auths := authenticator.NewRegistry(
-		authenticator.NewPhoneOTP(cfg.OTP, repos.Challenge, rdb, smsSender, captchaVerifier),
+		authenticator.NewPhoneOTP(cfg.OTP, repos.Challenge, rdb, smsHot, captchaVerifier),
 		authenticator.NewEmailOTP(cfg.OTP, repos.Challenge, rdb, emailSender, captchaVerifier),
 		authenticator.NewPhonePassword(repos.Identity, repos.Credential, rdb),
 		authenticator.NewEmailPassword(repos.Identity, repos.Credential, rdb),
@@ -104,6 +105,9 @@ func New(cfg *config.Config) (*Application, error) {
 	authSvc.SetOAuth(oauthSvc)
 	adminSvc := service.NewAdminService(cfg, repos, oauthReg, rdb)
 	adminSvc.SetJWT(jwtMgr)
+	adminSvc.SetSMSHot(smsHot)
+	adminSvc.SetMQProducer(producer)
+	adminSvc.RestoreSMSChannel(context.Background())
 	_ = adminSvc.EnsureDefaultTenant(context.Background())
 	h := handler.NewAuthHandler(authSvc, oauthSvc)
 	adminH := handler.NewAdminHandler(adminSvc)

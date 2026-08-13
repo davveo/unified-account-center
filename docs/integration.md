@@ -3,8 +3,9 @@
 本文面向需要接入「统一账户认证中台」的业务应用开发者。
 
 操作手册：
-- [管理员版](./operations-admin.md)（后台 / 审批 / 租户 / SSO / RBAC）
+- [管理员版](./operations-admin.md)（后台 / 审批 / 租户 / SSO / RBAC / Dashboard / 导出）
 - [终端用户版](./operations-user.md)（登录 / MFA / Passkey / 邀请码 / 合并）
+- [网关对接](./gateway.md)（JWKS / introspect / userinfo）
 - [索引](./operations.md)
 
 ## 1. 接入准备
@@ -249,6 +250,19 @@ Header：`Authorization: Bearer <access_token>`
 
 ### 4.6 当前用户
 
+```http
+GET /api/v1/auth/me
+X-Client-Id: app_demo
+Authorization: Bearer <access_token>
+```
+
+OIDC 标准 UserInfo（无需 `X-Client-Id`，直接返回 claims）：
+
+```http
+GET /api/v1/auth/userinfo
+Authorization: Bearer <access_token>
+```
+
 `GET /me`  
 Header：`Authorization: Bearer <access_token>`
 
@@ -319,6 +333,8 @@ OAuth 解绑：
 `GET /oauth/{provider}/callback` 为中台回调入口（托管模式简化实现，返回 code/state）。
 
 ### 4.10 Token 内省（业务鉴权）
+
+完整网关对接（JWKS 本地验签、introspect、OIDC Discovery、userinfo）见 [gateway.md](./gateway.md)。
 
 业务服务可用（**必须**携带 `X-Client-Id` + `X-Client-Secret`）：
 

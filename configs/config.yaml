@@ -1,10 +1,14 @@
 server:
   addr: ":8080"
   mode: debug # debug | release
+  public_base_url: "http://127.0.0.1:8080" # OIDC discovery / 网关对接用
 
 admin:
   # 管理后台鉴权 Token，请求头：X-Admin-Token
   token: "admin-dev-token"
+
+export:
+  dir: "data/exports" # 审计 CSV 持久化（本地对象存储）
 
 database:
   driver: mysql

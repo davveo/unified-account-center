@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/davveo/unified-account-center/internal/middleware"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
@@ -96,8 +97,17 @@ func (h *AdminHandler) UpdateApp(c *gin.Context) {
 	response.OK(c, res)
 }
 
+func adminActor(c *gin.Context) string {
+	if v, ok := c.Get(middleware.CtxUserID); ok {
+		if s, _ := v.(string); s != "" {
+			return s
+		}
+	}
+	return "admin_token"
+}
+
 func (h *AdminHandler) RotateSecret(c *gin.Context) {
-	res, err := h.admin.RotateSecret(c.Request.Context(), c.Param("client_id"))
+	res, err := h.admin.RotateSecret(c.Request.Context(), c.Param("client_id"), adminActor(c))
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -106,7 +116,7 @@ func (h *AdminHandler) RotateSecret(c *gin.Context) {
 }
 
 func (h *AdminHandler) RevealSecret(c *gin.Context) {
-	secret, err := h.admin.RevealAppSecret(c.Request.Context(), c.Param("client_id"))
+	secret, err := h.admin.RevealAppSecret(c.Request.Context(), c.Param("client_id"), adminActor(c))
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -172,6 +182,21 @@ func (h *AdminHandler) ListAudits(c *gin.Context) {
 		b := v == "true"
 		filter.Success = &b
 	}
+	if from := c.Query("from"); from != "" {
+		if t, err := time.Parse(time.RFC3339, from); err == nil {
+			filter.From = &t
+		} else if t, err := time.Parse("2006-01-02", from); err == nil {
+			filter.From = &t
+		}
+	}
+	if to := c.Query("to"); to != "" {
+		if t, err := time.Parse(time.RFC3339, to); err == nil {
+			filter.To = &t
+		} else if t, err := time.Parse("2006-01-02", to); err == nil {
+			end := t.Add(24*time.Hour - time.Second)
+			filter.To = &end
+		}
+	}
 	list, total, err := h.admin.ListAudits(c.Request.Context(), filter)
 	if err != nil {
 		response.FailErr(c, err)
@@ -195,7 +220,7 @@ func (h *AdminHandler) UpsertOAuthProvider(c *gin.Context) {
 		response.Fail(c, errcode.BadRequest, "参数错误")
 		return
 	}
-	res, err := h.admin.UpsertOAuthProvider(c.Request.Context(), req)
+	res, err := h.admin.UpsertOAuthProvider(c.Request.Context(), req, adminActor(c))
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -446,4 +471,82 @@ func (h *AdminHandler) ListRoles(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"items": list, "total": total})
+}
+
+func (h *AdminHandler) Dashboard(c *gin.Context) {
+	res, err := h.admin.Dashboard(c.Request.Context())
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) ExportAudits(c *gin.Context) {
+	filter := repository.AuditFilter{
+		TenantID: c.Query("tenant_id"),
+		ClientID: c.Query("client_id"),
+		UserID:   c.Query("user_id"),
+		Action:   c.Query("action"),
+	}
+	if from := c.Query("from"); from != "" {
+		if t, err := time.Parse(time.RFC3339, from); err == nil {
+			filter.From = &t
+		} else if t, err := time.Parse("2006-01-02", from); err == nil {
+			filter.From = &t
+		}
+	}
+	if to := c.Query("to"); to != "" {
+		if t, err := time.Parse(time.RFC3339, to); err == nil {
+			filter.To = &t
+		} else if t, err := time.Parse("2006-01-02", to); err == nil {
+			end := t.Add(24*time.Hour - time.Second)
+			filter.To = &end
+		}
+	}
+	persist := c.Query("persist") == "1" || c.Query("persist") == "true"
+	meta, data, err := h.admin.ExportAuditsCSV(c.Request.Context(), filter, persist, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	if persist {
+		response.OK(c, meta)
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename="+meta.Filename)
+	c.Data(200, "text/csv; charset=utf-8", data)
+}
+
+func (h *AdminHandler) DownloadExport(c *gin.Context) {
+	name, data, err := h.admin.ReadExportFile(c.Param("filename"))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename="+name)
+	c.Data(200, "text/csv; charset=utf-8", data)
+}
+
+func (h *AdminHandler) GetSMSChannel(c *gin.Context) {
+	res, err := h.admin.GetSMSChannel(c.Request.Context())
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) UpdateSMSChannel(c *gin.Context) {
+	var req service.UpdateSMSChannelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.admin.UpdateSMSChannel(c.Request.Context(), req, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
 }

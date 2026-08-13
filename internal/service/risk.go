@@ -9,6 +9,7 @@ import (
 
 	"github.com/davveo/unified-account-center/internal/model"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
+	"github.com/davveo/unified-account-center/internal/pkg/observability"
 )
 
 func (s *AuthService) assertNotLocked(ctx context.Context, identityKey, ip string) error {
@@ -114,5 +115,10 @@ func (s *AuthService) fireRiskAlert(ctx context.Context, event string, payload m
 }
 
 func (s *AuthService) alertOTPLimit(ctx context.Context, kind, key string) {
+	observability.IncOTPLimitHit()
 	s.fireRiskAlert(ctx, "otp_daily_limit", map[string]interface{}{"kind": kind, "key": key})
+	_ = s.repos.Audit.Create(ctx, &model.AuditLog{
+		Action: "otp_limit_alert", Success: false,
+		Detail: kind + ":" + key, CreatedAt: time.Now(),
+	})
 }

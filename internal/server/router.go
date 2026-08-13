@@ -70,6 +70,7 @@ func NewRouter(d Deps) *gin.Engine {
 	r.GET("/.well-known/jwks.json", func(c *gin.Context) {
 		c.JSON(http.StatusOK, d.JWT.JWKS())
 	})
+	r.GET("/.well-known/openid-configuration", d.AuthHandler.OpenIDConfiguration)
 	r.GET("/api/v1/auth/jwks", func(c *gin.Context) {
 		c.JSON(http.StatusOK, d.JWT.JWKS())
 	})
@@ -157,6 +158,14 @@ func NewRouter(d Deps) *gin.Engine {
 			user.POST("/merge/start", d.AuthHandler.MergeStart)
 			user.POST("/merge/confirm", d.AuthHandler.MergeConfirm)
 		}
+
+		// OIDC userinfo：仅需 Bearer（可不带 X-Client-Id）
+		oidcUser := v1.Group("")
+		oidcUser.Use(middleware.UserAuth(d.JWT, d.Redis))
+		{
+			oidcUser.GET("/userinfo", d.AuthHandler.UserInfo)
+			oidcUser.POST("/userinfo", d.AuthHandler.UserInfo)
+		}
 	}
 
 	adminAPI := r.Group("/api/v1/admin")
@@ -199,6 +208,12 @@ func NewRouter(d Deps) *gin.Engine {
 		adminAuthed.POST("/roles/assign", d.AdminHandler.AssignRole)
 		adminAuthed.POST("/roles/revoke", d.AdminHandler.RevokeRole)
 		adminAuthed.GET("/roles", d.AdminHandler.ListRoles)
+
+		adminAuthed.GET("/dashboard", d.AdminHandler.Dashboard)
+		adminAuthed.GET("/audits/export", d.AdminHandler.ExportAudits)
+		adminAuthed.GET("/exports/:filename", d.AdminHandler.DownloadExport)
+		adminAuthed.GET("/sms-channel", d.AdminHandler.GetSMSChannel)
+		adminAuthed.PUT("/sms-channel", d.AdminHandler.UpdateSMSChannel)
 	}
 
 	return r

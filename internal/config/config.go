@@ -24,6 +24,7 @@ type Config struct {
 	OAuth     OAuthConfig     `yaml:"oauth"`
 	Risk      RiskConfig      `yaml:"risk"`
 	WebAuthn  WebAuthnConfig  `yaml:"webauthn"`
+	Export    ExportConfig    `yaml:"export"`
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
 }
 
@@ -46,8 +47,13 @@ type AdminConfig struct {
 }
 
 type ServerConfig struct {
-	Addr string `yaml:"addr"`
-	Mode string `yaml:"mode"`
+	Addr          string `yaml:"addr"`
+	Mode          string `yaml:"mode"`
+	PublicBaseURL string `yaml:"public_base_url"` // 如 https://auth.example.com，用于 OIDC discovery
+}
+
+type ExportConfig struct {
+	Dir string `yaml:"dir"` // 审计导出持久化目录（本地对象存储），默认 ./data/exports
 }
 
 type DatabaseConfig struct {
@@ -161,6 +167,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Server.Mode == "" {
 		c.Server.Mode = "debug"
+	}
+	if c.Export.Dir == "" {
+		c.Export.Dir = "data/exports"
 	}
 	// 仅开发模式填充默认 Admin Token；release 必须显式配置
 	if c.Admin.Token == "" && c.Server.Mode != "release" {

@@ -156,6 +156,9 @@ func (s *AuthService) Challenge(ctx context.Context, meta RequestMeta, dto Chall
 	if err != nil && errcode.Is(err, errcode.RateLimited) {
 		s.alertOTPLimit(ctx, "challenge", dto.Identity)
 	}
+	if err == nil && (dto.Method == model.MethodPhoneOTP || dto.Method == model.MethodEmailOTP) {
+		observability.IncOTPSent()
+	}
 	s.audit(ctx, app, "", "challenge", err == nil, dto.Method+":"+dto.Identity, meta)
 	return res, err
 }

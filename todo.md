@@ -151,9 +151,9 @@
 ### 13. OpenAPI 与 OIDC Discovery
 
 - [ ] OpenAPI 3.0 规范与自动生成
-- [ ] `/.well-known/openid-configuration`
-- [ ] 标准 `userinfo` 端点
-- [ ] 网关对接示例更新
+- [x] `/.well-known/openid-configuration`
+- [x] 标准 `userinfo` 端点
+- [x] 网关对接示例更新
 
 
 
@@ -169,8 +169,8 @@
 
 - [ ] Admin token / Client secret 进 KMS 或环境变量
 - [ ] JWT `kid` 双钥滚动（旧钥只验不签）
-- [ ] 短信 / OAuth 密钥热更新
-- [ ] 密钥轮换操作审计
+- [x] 短信 / OAuth 密钥热更新
+- [x] 密钥轮换操作审计
 
 
 
@@ -186,8 +186,8 @@
 ### 17. 可观测补强
 
 - [ ] OpenTelemetry tracing
-- [ ] 审计日志导出（CSV / 对象存储）
-- [ ] Dashboard：登录成功率、OTP 发送量、刷短信告警
+- [x] 审计日志导出（CSV / 对象存储）
+- [x] Dashboard：登录成功率、OTP 发送量、刷短信告警
 - [ ] `/readyz` 与深检分级（liveness vs readiness）
 
 ---
@@ -202,7 +202,7 @@
 | 下一迭代  | #1 托管登录页、#3 设备会话、#4 真实 captcha | 接入体验 + 防刷立刻可见 | ✅ 已完成（含 #2） |
 | 再下一迭代 | #5–#8 TOTP MFA / Passkey / 合并 / 风控 | 安全与账户体验     | ✅ 已完成          |
 | 中期    | #9–#12 多租户/企业 SSO/邀请/RBAC      | B 端与治理能力     | ✅ 已完成（SAML 暂缓） |
-| 长期    | #13–#17 工程化                    | 可维护性与生态对接     | 待做          |
+| 长期    | #13–#17 工程化                    | 可维护性与生态对接     | 部分完成（OIDC/userinfo、网关文档、热更新、轮换审计、导出、Dashboard） |
 
 
 ---
@@ -238,3 +238,13 @@ P2 入口速览：
 - 入驻审批：`auto_register=false` → `40320` + `join_request_id`；Admin `GET/POST .../join-requests`
 - 建用户：`POST /api/v1/admin/users`
 - RBAC：`POST /api/v1/admin/roles/assign|revoke`；JWT `roles`/`scope`；Admin 可用 Bearer 管理角色 JWT
+
+P3（已部分落地）入口速览：
+
+- Discovery：`GET /.well-known/openid-configuration`
+- UserInfo：`GET /api/v1/auth/userinfo`
+- 网关文档：`docs/gateway.md`
+- Dashboard：`GET /api/v1/admin/dashboard`；后台「运营概览」
+- 审计导出：`GET /api/v1/admin/audits/export`（`persist=1` 写本地对象存储）
+- 短信热更新：`PUT /api/v1/admin/sms-channel`
+- 轮换/查看密钥审计：`admin_rotate_secret` / `admin_reveal_secret`

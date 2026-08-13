@@ -237,15 +237,64 @@ POST /api/v1/admin/roles/revoke
 
 **渠道测试**：选应用 → 发码 / 密码 / OAuth → 看响应。开发环境验证码在日志 `[mock-sms]` / `[mock-email]`。
 
-**审计日志**：按 `user_id` / `action` / `tenant_id` 查询。常见 action：`login_ok`、`login_fail`、`mfa_*`、`merge_*`、`admin_*`、`admin_reveal_secret`。
+**审计日志**：按 `user_id` / `action` / `tenant_id` / 日期查询。可 **导出 CSV**，或 **导出到对象存储**（写入 `export.dir`，默认 `data/exports`，再 `GET /api/v1/admin/exports/:filename` 下载）。
+
+常见 action：`login_ok`、`login_fail`、`mfa_*`、`merge_*`、`admin_rotate_secret`、`admin_reveal_secret`、`admin_oauth_hot_reload`、`admin_sms_hot_reload`、`admin_export_audits`、`otp_limit_alert`。
 
 ```http
-GET /api/v1/admin/audits?user_id=&action=&tenant_id=&limit=50
+GET /api/v1/admin/audits?user_id=&action=&from=2026-01-01&to=2026-01-31&limit=50
+GET /api/v1/admin/audits/export?persist=1&from=2026-01-01
 ```
 
 ---
 
-## 12. 常见问题（管理侧）
+## 12. 运营概览（Dashboard）
+
+后台首页 **运营概览**：
+
+- 进程级：登录成功率、OTP 发送量、刷短信告警次数、当前短信通道
+- 近 24h 审计聚合：成功/失败登录、发码量
+- OTP 相关告警列表
+
+```http
+GET /api/v1/admin/dashboard
+```
+
+Prometheus：`GET /metrics`（含 `uac_login_total`、`uac_otp_sent_total`、`uac_otp_limit_hits_total`）。
+
+---
+
+## 13. 短信 / OAuth 热更新
+
+### OAuth Provider
+
+**对接渠道** 或 API `PUT /api/v1/admin/oauth-providers` 更新 `client_id` / `client_secret` 等，立即生效，写审计 `admin_oauth_hot_reload`。
+
+### 短信通道
+
+**对接渠道 → 短信通道热更新**：在 `mock` / `mq` 间切换（MQ 需配置启用），写审计 `admin_sms_hot_reload`。
+
+```http
+GET /api/v1/admin/sms-channel
+PUT /api/v1/admin/sms-channel
+{"provider":"mock"}
+```
+
+### 密钥轮换审计
+
+应用 **轮换密钥** / **查看密钥** 分别写 `admin_rotate_secret` / `admin_reveal_secret`（含操作者）。
+
+---
+
+## 14. OIDC / UserInfo（供网关）
+
+- Discovery：`GET /.well-known/openid-configuration`
+- UserInfo：`GET /api/v1/auth/userinfo`（Bearer）
+- 详见 [gateway.md](./gateway.md)
+
+---
+
+## 15. 常见问题（管理侧）
 
 **查看 secret 提示仅哈希？**  
 轮换一次密钥即可；新应用默认可查看。
@@ -262,6 +311,9 @@ GET /api/v1/admin/audits?user_id=&action=&tenant_id=&limit=50
 **合并后源账号登不进去？**  
 预期：源会话已吊销，身份已挂到目标 `user_id`。
 
+**切换短信 mq 失败？**  
+需 `mq.enabled=true` 且生产者可用。
+
 ---
 
 ## 相关文档
@@ -270,4 +322,5 @@ GET /api/v1/admin/audits?user_id=&action=&tenant_id=&limit=50
 |------|------|
 | [operations-user.md](./operations-user.md) | 终端用户操作 |
 | [integration.md](./integration.md) | 业务方接入与错误码 |
+| [gateway.md](./gateway.md) | 网关 JWKS / introspect / userinfo |
 | [../README.md](../README.md) | 快速启动 |

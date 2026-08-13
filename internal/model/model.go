@@ -345,3 +345,13 @@ type RoleBinding struct {
 }
 
 func (RoleBinding) TableName() string { return "role_bindings" }
+
+// PlatformSetting 平台级热配置（如短信通道）。
+type PlatformSetting struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
+	Key       string    `gorm:"column:setting_key;size:64;uniqueIndex;not null" json:"key"`
+	Value     string    `gorm:"type:text" json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (PlatformSetting) TableName() string { return "platform_settings" }

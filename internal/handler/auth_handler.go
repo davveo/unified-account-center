@@ -114,6 +114,34 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	response.OK(c, res)
 }
 
+func (h *AuthHandler) UserInfo(c *gin.Context) {
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	res, err := h.auth.UserInfo(c.Request.Context(), uid)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	// OIDC userinfo 直接返回 claims（非业务 envelope）
+	c.JSON(200, res)
+}
+
+func (h *AuthHandler) OpenIDConfiguration(c *gin.Context) {
+	base := c.Request.Header.Get("X-Forwarded-Proto")
+	host := c.Request.Host
+	if base == "" {
+		if c.Request.TLS != nil {
+			base = "https"
+		} else {
+			base = "http"
+		}
+	}
+	if xfHost := c.Request.Header.Get("X-Forwarded-Host"); xfHost != "" {
+		host = xfHost
+	}
+	c.JSON(200, h.auth.OpenIDConfiguration(base+"://"+host))
+}
+
 func (h *AuthHandler) Bind(c *gin.Context) {
 	var dto service.LoginDTO
 	if err := c.ShouldBindJSON(&dto); err != nil {

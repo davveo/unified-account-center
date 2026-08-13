@@ -99,7 +99,8 @@
         </div>
 
         <nav class="flex flex-col gap-1">
-          <button type="button" class="nav-item active" data-view="apps">应用凭证</button>
+          <button type="button" class="nav-item active" data-view="dashboard">运营概览</button>
+          <button type="button" class="nav-item" data-view="apps">应用凭证</button>
           <button type="button" class="nav-item" data-view="tenants">租户管理</button>
           <button type="button" class="nav-item" data-view="channels">对接渠道</button>
           <button type="button" class="nav-item" data-view="users">用户管理</button>
@@ -122,12 +123,30 @@
 
     <main class="px-4 py-6 sm:px-6 lg:px-8">
       <header class="mb-6">
-        <h1 id="pageTitle" class="text-2xl font-semibold tracking-tight sm:text-3xl">应用凭证</h1>
-        <p id="pageDesc" class="mt-1 text-sm text-mist">创建 client_id / client_secret，管理接入应用</p>
+        <h1 id="pageTitle" class="text-2xl font-semibold tracking-tight sm:text-3xl">运营概览</h1>
+        <p id="pageDesc" class="mt-1 text-sm text-mist">登录成功率、OTP 发送量与刷短信告警</p>
       </header>
 
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="view active space-y-4">
+        <div class="flex justify-end">
+          <button id="refreshDashboard" type="button" class="btn btn-ghost">刷新</button>
+        </div>
+        <div id="dashCards" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"></div>
+        <div class="grid gap-4 xl:grid-cols-2">
+          <article class="panel">
+            <h2 class="panel-title">近 24h 审计聚合</h2>
+            <div id="dashAudit" class="mt-3 text-sm text-mist">加载中…</div>
+          </article>
+          <article class="panel">
+            <h2 class="panel-title">刷短信 / OTP 告警</h2>
+            <div id="dashAlerts" class="mt-3">加载中…</div>
+          </article>
+        </div>
+      </section>
+
       <!-- Apps -->
-      <section id="view-apps" class="view active space-y-4">
+      <section id="view-apps" class="view space-y-4">
         <div class="grid gap-4 xl:grid-cols-[380px_1fr]">
           <article class="panel">
             <h2 class="panel-title">创建应用</h2>
@@ -197,11 +216,19 @@
       </section>
 
       <!-- Channels -->
-      <section id="view-channels" class="view">
+      <section id="view-channels" class="view space-y-4">
         <article class="panel">
           <h2 class="panel-title">平台支持的对接渠道</h2>
           <p class="mt-2 text-sm text-mist">以下为认证中台已实现的登录方式。应用侧通过 <code class="font-mono text-xs">allowed_methods</code> 按需启用。</p>
           <div id="channelsGrid" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">加载中…</div>
+        </article>
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">短信通道热更新</h2>
+            <button id="refreshSMS" type="button" class="btn btn-ghost">刷新</button>
+          </div>
+          <p class="mt-2 text-sm text-mist">无需重启即可在 mock / mq 之间切换短信发送实现；OAuth Provider 密钥在渠道配置中热更新。</p>
+          <div id="smsChannelBox" class="mt-4 space-y-3">加载中…</div>
         </article>
       </section>
 
@@ -284,7 +311,11 @@
             <div class="flex flex-wrap items-center gap-2">
               <input id="auditUser" class="input w-36" placeholder="user_id" />
               <input id="auditAction" class="input w-32" placeholder="action" />
+              <input id="auditFrom" class="input w-36" type="date" title="from" />
+              <input id="auditTo" class="input w-36" type="date" title="to" />
               <button id="refreshAudits" type="button" class="btn btn-ghost">查询</button>
+              <button id="exportAudits" type="button" class="btn btn-primary">导出 CSV</button>
+              <button id="persistAudits" type="button" class="btn btn-ghost">导出到对象存储</button>
             </div>
           </div>
           <div id="auditsTable" class="mt-4 overflow-x-auto">加载中…</div>

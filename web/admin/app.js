@@ -2,13 +2,14 @@
   const AUTH_KEY = "uac_admin_session";
   const TOKEN_KEY = "uac_admin_token"; // legacy
   const titles = {
+    dashboard: ["运营概览", "登录成功率、OTP 发送量与刷短信告警"],
     apps: ["应用凭证", "创建 / 停用应用，查看 client_id / client_secret，轮换密钥"],
     tenants: ["租户管理", "租户配额、强制 SSO、企业域名 IdP 路由"],
-    channels: ["对接渠道", "查看中台已支持的登录方式与配置状态"],
+    channels: ["对接渠道", "登录方式、OAuth / 短信通道热更新"],
     users: ["用户管理", "禁用/强退、重置 MFA、合并账号、风控解锁"],
     invites: ["邀请 / 入驻", "邀请码、审批入驻、管理员建用户"],
     roles: ["角色权限", "轻量 RBAC：roles / scope 写入 JWT"],
-    audits: ["审计日志", "查询登录 / 绑定 / 改密等操作记录"],
+    audits: ["审计日志", "查询与导出登录 / 绑定 / 密钥操作记录"],
     playground: ["渠道测试", "用真实接口联调验证码 / 密码 / OAuth 登录"],
   };
 
@@ -332,7 +333,109 @@
     showApp(session);
     await loadChannels();
     renderMethodChecks();
-    await loadApps();
+    switchView("dashboard");
+  }
+
+  async function loadDashboard() {
+    try {
+      const d = await api("/api/v1/admin/dashboard");
+      const p = d.process || {};
+      const a = d.audit_24h || {};
+      const pct = ((p.login_success_rate || 0) * 100).toFixed(1);
+      const pct24 = ((a.login_success_rate || 0) * 100).toFixed(1);
+      $("dashCards").innerHTML = [
+        ["登录成功率(进程)", pct + "%", `${p.login_ok || 0} / ${(p.login_ok || 0) + (p.login_fail || 0)}`],
+        ["OTP 发送量", String(p.otp_sent || 0), "进程累计"],
+        ["刷短信告警", String(p.otp_limit_hits || 0), "日限额命中"],
+        ["短信通道", d.sms_provider || "-", "热更新可用"],
+      ].map(([t, v, s]) => `
+        <article class="panel">
+          <div class="text-xs font-medium uppercase tracking-wide text-mist">${escapeHtml(t)}</div>
+          <div class="mt-2 text-3xl font-semibold tracking-tight">${escapeHtml(v)}</div>
+          <div class="mt-1 text-xs text-mist">${escapeHtml(s)}</div>
+        </article>`).join("");
+      $("dashAudit").innerHTML = `
+        <div class="grid grid-cols-2 gap-3">
+          <div><div class="text-mist text-xs">成功登录</div><div class="text-xl font-semibold">${a.login_ok || 0}</div></div>
+          <div><div class="text-mist text-xs">失败登录</div><div class="text-xl font-semibold">${a.login_fail || 0}</div></div>
+          <div><div class="text-mist text-xs">发码成功</div><div class="text-xl font-semibold">${a.challenge || 0}</div></div>
+          <div><div class="text-mist text-xs">成功率</div><div class="text-xl font-semibold">${pct24}%</div></div>
+        </div>
+        <div class="mt-3 text-xs text-mist">生成于 ${escapeHtml(d.generated_at || "")}</div>`;
+      const alerts = d.sms_alerts || [];
+      $("dashAlerts").innerHTML = alerts.length
+        ? `<table class="table-base"><thead><tr><th>时间</th><th>action</th><th>detail</th></tr></thead>
+           <tbody>${alerts.map((x) => `<tr>
+             <td class="text-xs whitespace-nowrap">${escapeHtml(x.created_at)}</td>
+             <td class="font-mono text-xs">${escapeHtml(x.action)}</td>
+             <td class="text-xs text-mist">${escapeHtml(x.detail)}</td>
+           </tr>`).join("")}</tbody></table>`
+        : `<div class="text-sm text-mist">近 24h 暂无 OTP 相关告警</div>`;
+    } catch (e) {
+      $("dashCards").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  async function loadSMSChannel() {
+    try {
+      const d = await api("/api/v1/admin/sms-channel");
+      $("smsChannelBox").innerHTML = `
+        <div class="text-sm">当前 provider：<span class="font-mono font-semibold">${escapeHtml(d.provider)}</span>
+          ${d.mq_enabled ? "" : "（MQ 未启用，仅 mock 可用）"}</div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary" data-sms="mock">切换 mock</button>
+          <button type="button" class="btn btn-ghost" data-sms="mq" ${d.mq_enabled ? "" : "disabled"}>切换 mq</button>
+        </div>
+        <div class="text-xs text-mist">topic=${escapeHtml(d.mq_topic || "-")} · updated=${escapeHtml(d.updated_at || "-")}</div>`;
+      $("smsChannelBox").querySelectorAll("[data-sms]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            await api("/api/v1/admin/sms-channel", {
+              method: "PUT",
+              body: JSON.stringify({ provider: btn.dataset.sms }),
+            });
+            toast("短信通道已热更新");
+            loadSMSChannel();
+            loadDashboard();
+          } catch (e) { uiAlert(e.message); }
+        });
+      });
+    } catch (e) {
+      $("smsChannelBox").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function auditQuery() {
+    const user = encodeURIComponent(($("auditUser")?.value || "").trim());
+    const action = encodeURIComponent(($("auditAction")?.value || "").trim());
+    const from = encodeURIComponent(($("auditFrom")?.value || "").trim());
+    const to = encodeURIComponent(($("auditTo")?.value || "").trim());
+    return `user_id=${user}&action=${action}&from=${from}&to=${to}`;
+  }
+
+  async function exportAudits(persist) {
+    try {
+      const qs = auditQuery() + (persist ? "&persist=1" : "");
+      if (persist) {
+        const data = await api(`/api/v1/admin/audits/export?${qs}`);
+        await uiAlert(`已写入对象存储\n文件：${data.filename}\n路径：${data.path}\n下载：${data.url}`, { mono: true, title: "导出成功" });
+        return;
+      }
+      const headers = authHeaders();
+      const res = await fetch(`/api/v1/admin/audits/export?${qs}`, { headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "导出失败");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audits_${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("CSV 已下载");
+    } catch (e) { uiAlert(e.message); }
   }
 
   async function restoreSession() {
@@ -369,7 +472,8 @@
     });
     $("pageTitle").textContent = titles[name][0];
     $("pageDesc").textContent = titles[name][1];
-    if (name === "channels") loadChannels();
+    if (name === "dashboard") loadDashboard();
+    if (name === "channels") { loadChannels(); loadSMSChannel(); }
     if (name === "playground") preparePlayground();
     if (name === "apps") loadApps();
     if (name === "users") loadUsers();
@@ -759,9 +863,7 @@
 
   async function loadAudits() {
     try {
-      const user = encodeURIComponent($("auditUser").value.trim());
-      const action = encodeURIComponent($("auditAction").value.trim());
-      const data = await api(`/api/v1/admin/audits?limit=50&user_id=${user}&action=${action}`);
+      const data = await api(`/api/v1/admin/audits?limit=50&${auditQuery()}`);
       const items = data.items || [];
       $("auditsTable").innerHTML = `<table class="table-base">
         <thead><tr><th>时间</th><th>action</th><th>user</th><th>client</th><th>成功</th><th>detail</th></tr></thead>
@@ -1070,6 +1172,10 @@
   $("refreshApps").addEventListener("click", loadApps);
   $("refreshUsers")?.addEventListener("click", loadUsers);
   $("refreshAudits")?.addEventListener("click", loadAudits);
+  $("exportAudits")?.addEventListener("click", () => exportAudits(false));
+  $("persistAudits")?.addEventListener("click", () => exportAudits(true));
+  $("refreshDashboard")?.addEventListener("click", loadDashboard);
+  $("refreshSMS")?.addEventListener("click", loadSMSChannel);
   $("refreshTenants")?.addEventListener("click", () => { loadTenants(); loadIdPs(); });
   $("refreshInvites")?.addEventListener("click", loadInvites);
   $("refreshJoins")?.addEventListener("click", loadJoins);

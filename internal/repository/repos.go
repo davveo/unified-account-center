@@ -80,6 +80,8 @@ type AuditFilter struct {
 	UserID   string
 	Action   string
 	Success  *bool
+	From     *time.Time
+	To       *time.Time
 	Limit    int
 	Offset   int
 }
@@ -148,5 +150,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Invite{},
 		&model.JoinRequest{},
 		&model.RoleBinding{},
+		&model.PlatformSetting{},
 	)
 }

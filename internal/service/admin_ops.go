@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,7 +95,7 @@ type RotateSecretResult struct {
 	ClientSecret string `json:"client_secret"`
 }
 
-func (s *AdminService) RotateSecret(ctx context.Context, clientID string) (*RotateSecretResult, error) {
+func (s *AdminService) RotateSecret(ctx context.Context, clientID, actor string) (*RotateSecretResult, error) {
 	app, err := s.repos.App.FindByClientID(ctx, clientID)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "查询应用失败", err)
@@ -119,6 +120,11 @@ func (s *AdminService) RotateSecret(ctx context.Context, clientID string) (*Rota
 	_ = s.repos.DB.WithContext(ctx).Model(&model.RefreshToken{}).
 		Where("client_id = ? AND revoked_at IS NULL", clientID).
 		Update("revoked_at", time.Now())
+	_ = s.repos.Audit.Create(ctx, &model.AuditLog{
+		TenantID: app.TenantID, UserID: actor, ClientID: clientID,
+		Action: "admin_rotate_secret", Success: true,
+		Detail: "admin rotated client_secret", CreatedAt: time.Now(),
+	})
 	return &RotateSecretResult{ClientID: clientID, ClientSecret: secret}, nil
 }
 
@@ -230,7 +236,7 @@ type UpsertOAuthProviderRequest struct {
 	Enabled      *bool    `json:"enabled"`
 }
 
-func (s *AdminService) UpsertOAuthProvider(ctx context.Context, req UpsertOAuthProviderRequest) (*model.OAuthProviderRow, error) {
+func (s *AdminService) UpsertOAuthProvider(ctx context.Context, req UpsertOAuthProviderRequest, actor string) (*model.OAuthProviderRow, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, errcode.New(errcode.BadRequest, "name 不能为空")
@@ -295,6 +301,11 @@ func (s *AdminService) UpsertOAuthProvider(ctx context.Context, req UpsertOAuthP
 			s.oauthReg.Remove(row.Name)
 		}
 	}
+	_ = s.repos.Audit.Create(ctx, &model.AuditLog{
+		UserID: actor, Action: "admin_oauth_hot_reload", Success: true,
+		Detail: "provider=" + row.Name + " enabled=" + strconv.FormatBool(row.Enabled),
+		CreatedAt: time.Now(),
+	})
 	out := row
 	out.ClientSecret = ""
 	return &out, nil

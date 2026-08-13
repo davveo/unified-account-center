@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/davveo/unified-account-center/internal/adapter/oauth"
+	"github.com/davveo/unified-account-center/internal/adapter/sms"
 	"github.com/davveo/unified-account-center/internal/config"
 	"github.com/davveo/unified-account-center/internal/model"
+	"github.com/davveo/unified-account-center/internal/mq"
 	"github.com/davveo/unified-account-center/internal/pkg/crypto"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
@@ -80,11 +82,13 @@ type ChannelInfo struct {
 }
 
 type AdminService struct {
-	cfg      *config.Config
-	repos    *repository.Repos
-	oauthReg *oauth.Registry
-	redis    *redisx.Client
-	jwt      *jwtutil.Manager
+	cfg        *config.Config
+	repos      *repository.Repos
+	oauthReg   *oauth.Registry
+	redis      *redisx.Client
+	jwt        *jwtutil.Manager
+	smsHot     *sms.HotSender
+	mqProducer mq.Producer
 }
 
 func NewAdminService(cfg *config.Config, repos *repository.Repos, oauthReg *oauth.Registry, rdb *redisx.Client) *AdminService {
@@ -328,7 +332,7 @@ func (s *AdminService) secretSealKey() string {
 }
 
 // RevealAppSecret 管理后台查看 client_secret 明文。
-func (s *AdminService) RevealAppSecret(ctx context.Context, clientID string) (string, error) {
+func (s *AdminService) RevealAppSecret(ctx context.Context, clientID, actor string) (string, error) {
 	app, err := s.repos.App.FindByClientID(ctx, clientID)
 	if err != nil {
 		return "", errcode.Wrap(errcode.Internal, "查询应用失败", err)
@@ -344,7 +348,7 @@ func (s *AdminService) RevealAppSecret(ctx context.Context, clientID string) (st
 		return "", errcode.Wrap(errcode.Internal, "解密密钥失败", err)
 	}
 	_ = s.repos.Audit.Create(ctx, &model.AuditLog{
-		TenantID: app.TenantID, UserID: "", ClientID: clientID,
+		TenantID: app.TenantID, UserID: actor, ClientID: clientID,
 		Action: "admin_reveal_secret", Success: true,
 		Detail: "admin revealed client_secret", CreatedAt: time.Now(),
 	})

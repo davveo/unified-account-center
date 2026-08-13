@@ -392,6 +392,12 @@ func (r *auditRepo) List(ctx context.Context, filter AuditFilter) ([]model.Audit
 	if filter.Success != nil {
 		q = q.Where("success = ?", *filter.Success)
 	}
+	if filter.From != nil {
+		q = q.Where("created_at >= ?", *filter.From)
+	}
+	if filter.To != nil {
+		q = q.Where("created_at <= ?", *filter.To)
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
