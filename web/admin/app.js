@@ -1,5 +1,6 @@
 (() => {
-  const TOKEN_KEY = "uac_admin_token";
+  const AUTH_KEY = "uac_admin_session";
+  const TOKEN_KEY = "uac_admin_token"; // legacy
   const titles = {
     apps: ["应用凭证", "创建 / 停用应用，查看 client_id / client_secret，轮换密钥"],
     tenants: ["租户管理", "租户配额、强制 SSO、企业域名 IdP 路由"],
@@ -15,12 +16,46 @@
     channels: [],
     apps: [],
     revealedSecrets: {},
+    session: null,
   };
 
   const $ = (id) => document.getElementById(id);
 
-  function adminToken() {
-    return localStorage.getItem(TOKEN_KEY) || $("adminToken").value.trim();
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(AUTH_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    const legacy = localStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      return { auth_type: "token", token: legacy, role: "platform_admin" };
+    }
+    return null;
+  }
+
+  function saveSession(sess) {
+    state.session = sess;
+    if (!sess) {
+      localStorage.removeItem(AUTH_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+      return;
+    }
+    localStorage.setItem(AUTH_KEY, JSON.stringify(sess));
+    if (sess.auth_type === "token" && sess.token) {
+      localStorage.setItem(TOKEN_KEY, sess.token);
+    }
+  }
+
+  function authHeaders() {
+    const headers = { "Content-Type": "application/json" };
+    const sess = state.session || loadSession();
+    if (!sess || !sess.token) return headers;
+    if (sess.auth_type === "bearer") {
+      headers.Authorization = `Bearer ${sess.token}`;
+    } else {
+      headers["X-Admin-Token"] = sess.token;
+    }
+    return headers;
   }
 
   function setOutput(obj) {
@@ -220,11 +255,25 @@
   }
 
   /* ===================== API ===================== */
+  class AuthError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "AuthError";
+    }
+  }
+
   async function api(path, options = {}) {
-    const headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
-    headers["X-Admin-Token"] = adminToken();
+    if (!state.session || !state.session.token) {
+      showLogin("请先登录管理后台");
+      throw new AuthError("未登录");
+    }
+    const headers = Object.assign(authHeaders(), options.headers || {});
     const res = await fetch(path, { ...options, headers });
     const body = await res.json().catch(() => ({}));
+    if (res.status === 401 || body.code === 40100) {
+      showLogin(body.message || "登录已失效，请重新登录");
+      throw new AuthError(body.message || "未登录");
+    }
     if (!res.ok || body.code !== 0) {
       throw new Error(body.message || res.statusText || "请求失败");
     }
@@ -240,6 +289,75 @@
       body: body ? JSON.stringify(body) : undefined,
     });
     return res.json().catch(() => ({}));
+  }
+
+  function showLogin(errMsg) {
+    saveSession(null);
+    $("loginGate").classList.remove("hidden");
+    $("appShell").classList.add("hidden");
+    const err = $("loginError");
+    if (errMsg) {
+      err.textContent = errMsg;
+      err.classList.remove("hidden");
+    } else {
+      err.classList.add("hidden");
+      err.textContent = "";
+    }
+  }
+
+  function showApp(session) {
+    saveSession(session);
+    $("loginGate").classList.add("hidden");
+    $("appShell").classList.remove("hidden");
+    $("loginError").classList.add("hidden");
+    renderSessionBar(session);
+  }
+
+  function renderSessionBar(session) {
+    if (!session) {
+      $("sessionLabel").textContent = "未登录";
+      $("sessionMeta").textContent = "";
+      return;
+    }
+    if (session.auth_type === "bearer") {
+      $("sessionLabel").textContent = session.display_name || session.user_id || "管理员账号";
+      $("sessionMeta").textContent = `${session.role || ""}${session.tenant_id ? " · " + session.tenant_id : ""}`;
+    } else {
+      $("sessionLabel").textContent = "平台超管 Token";
+      $("sessionMeta").textContent = session.role || "platform_admin";
+    }
+  }
+
+  async function enterConsole(session) {
+    showApp(session);
+    await loadChannels();
+    renderMethodChecks();
+    await loadApps();
+  }
+
+  async function restoreSession() {
+    const sess = loadSession();
+    if (!sess || !sess.token) {
+      showLogin();
+      return;
+    }
+    state.session = sess;
+    try {
+      const me = await api("/api/v1/admin/me");
+      await enterConsole({
+        ...sess,
+        role: me.role || sess.role,
+        roles: me.roles || sess.roles,
+        user_id: me.user_id || sess.user_id,
+        tenant_id: me.tenant_id || sess.tenant_id,
+        display_name: me.display_name || sess.display_name,
+        auth_type: me.auth_type || sess.auth_type,
+      });
+    } catch (e) {
+      if (!(e instanceof AuthError)) {
+        showLogin(e.message || "会话校验失败");
+      }
+    }
   }
 
   function switchView(name) {
@@ -882,10 +1000,71 @@
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
 
-  $("adminToken").value = localStorage.getItem(TOKEN_KEY) || "admin-dev-token";
-  $("saveToken").addEventListener("click", () => {
-    localStorage.setItem(TOKEN_KEY, $("adminToken").value.trim());
-    toast("Admin Token 已保存");
+  document.querySelectorAll("[data-login-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-login-mode]").forEach((el) => {
+        el.classList.toggle("active", el === btn);
+      });
+      const mode = btn.dataset.loginMode;
+      $("loginFormToken").classList.toggle("hidden", mode !== "token");
+      $("loginFormPassword").classList.toggle("hidden", mode !== "password");
+      $("loginError").classList.add("hidden");
+    });
+  });
+
+  $("loginFormToken").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const token = $("loginToken").value.trim();
+    if (!token) return;
+    try {
+      const res = await fetch("/api/v1/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "token", token }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.code !== 0) {
+        showLogin(body.message || "登录失败");
+        return;
+      }
+      await enterConsole(body.data);
+      toast("登录成功");
+    } catch (err) {
+      showLogin(err.message || "网络错误");
+    }
+  });
+
+  $("loginFormPassword").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/v1/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "password",
+          method: $("loginMethod").value,
+          identity: $("loginIdentity").value.trim(),
+          password: $("loginPassword").value,
+          tenant_id: $("loginTenant").value.trim() || "default",
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.code !== 0) {
+        showLogin(body.message || "登录失败");
+        return;
+      }
+      await enterConsole(body.data);
+      toast("登录成功");
+    } catch (err) {
+      showLogin(err.message || "网络错误");
+    }
+  });
+
+  $("btnLogout").addEventListener("click", async () => {
+    const ok = await uiConfirm("确定退出管理后台？", { primaryText: "退出" });
+    if (!ok) return;
+    showLogin();
+    toast("已退出登录");
   });
 
   $("refreshApps").addEventListener("click", loadApps);
@@ -1168,8 +1347,5 @@
     }
   });
 
-  loadChannels().then(() => {
-    renderMethodChecks();
-    loadApps();
-  });
+  restoreSession();
 })();

@@ -12,6 +12,7 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/crypto"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
+	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
 	"github.com/davveo/unified-account-center/internal/repository"
 )
@@ -83,6 +84,7 @@ type AdminService struct {
 	repos    *repository.Repos
 	oauthReg *oauth.Registry
 	redis    *redisx.Client
+	jwt      *jwtutil.Manager
 }
 
 func NewAdminService(cfg *config.Config, repos *repository.Repos, oauthReg *oauth.Registry, rdb *redisx.Client) *AdminService {

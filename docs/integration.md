@@ -9,15 +9,17 @@
 
 ## 1. 接入准备
 
-1. 打开管理后台 `http://<host>:8080/admin/`（Header/本地保存 `X-Admin-Token`）
-2. 在「应用凭证」创建应用，获得：
+1. 打开管理后台 `http://<host>:8080/admin/`（未登录仅显示登录页）
+2. 使用 Admin Token（`configs/config.yaml` → `admin.token`）或具备管理角色的账号密码登录
+3. 在「应用凭证」创建应用，获得：
    - `client_id`
    - `client_secret`（可在后台「查看」；前端禁止下发）
-3. 配置启用登录方式（如 `phone_otp`、`email_password`、`oauth2`）
-4. 若使用 OAuth，配置 `redirect_uri` 白名单与 Provider（GitHub 等）
-5. 业务 API 统一携带用户 `Authorization: Bearer <access_token>`
+4. 配置启用登录方式（如 `phone_otp`、`email_password`、`oauth2`）
+5. 若使用 OAuth，配置 `redirect_uri` 白名单与 Provider（GitHub 等）
+6. 业务 API 统一携带用户 `Authorization: Bearer <access_token>`
 
 也可调用管理 API：
+
 
 ```http
 POST /api/v1/admin/apps

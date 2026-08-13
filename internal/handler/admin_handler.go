@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/davveo/unified-account-center/internal/middleware"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
 	"github.com/davveo/unified-account-center/internal/pkg/response"
 	"github.com/davveo/unified-account-center/internal/repository"
@@ -16,6 +17,35 @@ type AdminHandler struct {
 
 func NewAdminHandler(admin *service.AdminService) *AdminHandler {
 	return &AdminHandler{admin: admin}
+}
+
+func (h *AdminHandler) Login(c *gin.Context) {
+	var req service.AdminLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.admin.AdminLogin(c.Request.Context(), req)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) Me(c *gin.Context) {
+	role, _ := c.Get(middleware.CtxAdminRole)
+	userID, _ := c.Get(middleware.CtxUserID)
+	tenantID, _ := c.Get(middleware.CtxAdminTenant)
+	roleStr, _ := role.(string)
+	uid, _ := userID.(string)
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		if v, ok := c.Get(middleware.CtxTenantID); ok {
+			tid, _ = v.(string)
+		}
+	}
+	response.OK(c, h.admin.AdminMe(c.Request.Context(), roleStr, uid, tid))
 }
 
 func (h *AdminHandler) CreateApp(c *gin.Context) {

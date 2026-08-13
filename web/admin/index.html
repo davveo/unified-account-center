@@ -34,7 +34,60 @@
   <link rel="stylesheet" href="/admin/static/style.css" />
 </head>
 <body class="min-h-screen bg-canvas font-sans text-ink antialiased">
-  <div class="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
+  <!-- Login gate -->
+  <div id="loginGate" class="login-gate">
+    <div class="login-card">
+      <div class="flex items-center gap-3">
+        <div class="grid h-12 w-12 place-items-center rounded-2xl bg-brand text-lg font-bold tracking-wide text-brand-ink">UAC</div>
+        <div>
+          <div class="text-xl font-semibold tracking-tight">账户中台</div>
+          <div class="text-sm text-mist">管理后台登录</div>
+        </div>
+      </div>
+
+      <div class="mt-6 flex gap-2 rounded-xl bg-canvas p-1">
+        <button type="button" class="login-tab active" data-login-mode="token">管理 Token</button>
+        <button type="button" class="login-tab" data-login-mode="password">管理员账号</button>
+      </div>
+
+      <form id="loginFormToken" class="mt-5 space-y-4">
+        <div>
+          <label class="field-label" for="loginToken">Admin Token</label>
+          <input id="loginToken" type="password" class="input" autocomplete="current-password" placeholder="X-Admin-Token / configs.admin.token" required />
+        </div>
+        <p class="text-xs text-mist">开发环境默认见配置文件 <span class="font-mono">admin.token</span>。登录成功后才会进入控制台。</p>
+        <button type="submit" class="btn btn-primary w-full">进入后台</button>
+      </form>
+
+      <form id="loginFormPassword" class="mt-5 hidden space-y-4">
+        <div>
+          <label class="field-label" for="loginMethod">登录方式</label>
+          <select id="loginMethod" class="input">
+            <option value="phone_password">手机号 + 密码</option>
+            <option value="email_password">邮箱 + 密码</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="loginIdentity">账号</label>
+          <input id="loginIdentity" class="input" autocomplete="username" placeholder="手机号或邮箱" />
+        </div>
+        <div>
+          <label class="field-label" for="loginPassword">密码</label>
+          <input id="loginPassword" type="password" class="input" autocomplete="current-password" placeholder="密码" />
+        </div>
+        <div>
+          <label class="field-label" for="loginTenant">租户 tenant_id</label>
+          <input id="loginTenant" class="input" value="default" placeholder="default" />
+        </div>
+        <p class="text-xs text-mist">账号需具备 platform_admin / tenant_admin / operator / viewer 角色。</p>
+        <button type="submit" class="btn btn-primary w-full">登录</button>
+      </form>
+
+      <div id="loginError" class="mt-4 hidden rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"></div>
+    </div>
+  </div>
+
+  <div id="appShell" class="min-h-screen lg:grid lg:grid-cols-[240px_1fr] hidden">
     <aside class="border-b border-line bg-panel/90 backdrop-blur lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r">
       <div class="flex h-full flex-col gap-6 p-5">
         <div class="flex items-center gap-3">
@@ -56,10 +109,13 @@
           <button type="button" class="nav-item" data-view="playground">渠道测试</button>
         </nav>
 
-        <div class="mt-auto space-y-2 border-t border-line pt-4">
-          <label class="field-label" for="adminToken">Admin Token</label>
-          <input id="adminToken" type="password" class="input" placeholder="X-Admin-Token" />
-          <button id="saveToken" type="button" class="btn btn-ghost w-full">保存 Token</button>
+        <div class="mt-auto space-y-3 border-t border-line pt-4">
+          <div class="rounded-xl bg-canvas px-3 py-2">
+            <div class="text-[11px] font-medium uppercase tracking-wide text-mist">当前会话</div>
+            <div id="sessionLabel" class="mt-1 truncate text-sm font-medium">未登录</div>
+            <div id="sessionMeta" class="mt-0.5 truncate font-mono text-[11px] text-mist"></div>
+          </div>
+          <button id="btnLogout" type="button" class="btn btn-ghost w-full">退出登录</button>
         </div>
       </div>
     </aside>

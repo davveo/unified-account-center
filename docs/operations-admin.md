@@ -9,10 +9,28 @@
 ## 1. 进入管理后台
 
 1. 打开：`http://<host>:8080/admin/`
-2. 左侧填写 **Admin Token**（见 `configs/config.yaml` → `admin.token`），点「保存 Token」
-3. 之后请求自动带 `X-Admin-Token`
+2. **未登录会停留在登录页**，无法看到控制台内容
+3. 任选一种方式登录：
+   - **管理 Token**：填写 `configs/config.yaml` → `admin.token`（请求头等价于 `X-Admin-Token`）
+   - **管理员账号**：手机号/邮箱 + 密码（账号须具备 `platform_admin` / `tenant_admin` / `operator` / `viewer`）
+4. 登录成功后进入控制台；左下角显示当前会话，可 **退出登录**
+5. 会话保存在浏览器本地；失效或 401 会自动退回登录页
 
-也可用带管理角色的用户 JWT（`platform_admin` / `tenant_admin` / `operator` / `viewer`）代替，见第 10 节。
+API：
+
+```http
+POST /api/v1/admin/login
+{"mode":"token","token":"admin-dev-token"}
+
+POST /api/v1/admin/login
+{"mode":"password","method":"phone_password","identity":"13800138000","password":"***","tenant_id":"default"}
+
+GET /api/v1/admin/me
+X-Admin-Token: ***
+# 或 Authorization: Bearer <access_token>
+```
+
+也可继续用带管理角色的用户 JWT 直接调用管理 API（见第 10 节）。
 
 ---
 
