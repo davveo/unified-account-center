@@ -4,10 +4,10 @@
   const titles = {
     dashboard: ["运营概览", "登录成功率、OTP 发送量与刷短信告警"],
     apps: ["应用凭证", "创建 / 停用应用，查看 client_id / client_secret，轮换密钥"],
-    tenants: ["租户管理", "租户配额、强制 SSO、企业域名 IdP 路由"],
-    channels: ["对接渠道", "登录方式、OAuth / 短信通道热更新"],
-    users: ["用户管理", "禁用/强退、重置 MFA、合并账号、风控解锁"],
-    invites: ["邀请 / 入驻", "邀请码、审批入驻、管理员建用户"],
+    tenants: ["租户管理", "租户列表 / 企业 SSO，页内 Tab 切换"],
+    channels: ["对接渠道", "登录方式 / 短信通道热更新"],
+    users: ["用户管理", "用户列表 / 风控解锁"],
+    invites: ["邀请 / 入驻", "邀请码 / 入驻审批 / 管理员建用户"],
     roles: ["角色权限", "轻量 RBAC：roles / scope 写入 JWT"],
     audits: ["审计日志", "查询与导出登录 / 绑定 / 密钥操作记录"],
     playground: ["渠道测试", "用真实接口联调验证码 / 密码 / OAuth 登录"],
@@ -426,14 +426,31 @@
         </div>
         <div class="mt-3 text-xs text-mist">生成于 ${escapeHtml(d.generated_at || "")}</div>`;
       const alerts = d.sms_alerts || [];
-      $("dashAlerts").innerHTML = alerts.length
-        ? `<table class="table-base"><thead><tr><th>时间</th><th>action</th><th>detail</th></tr></thead>
+      const moreBtn = `<div class="mt-3 flex items-center justify-between gap-2">
+        <div class="text-xs text-mist">仅展示近 24h 最近 20 条</div>
+        <button type="button" class="btn btn-ghost btn-xs" id="btnMoreOTPAlerts">查看更多</button>
+      </div>`;
+      $("dashAlerts").innerHTML = (alerts.length
+        ? `<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>时间</th><th>action</th><th>detail</th></tr></thead>
            <tbody>${alerts.map((x) => `<tr>
              <td class="text-xs whitespace-nowrap">${escapeHtml(x.created_at)}</td>
              <td class="font-mono text-xs">${escapeHtml(x.action)}</td>
              <td class="text-xs text-mist">${escapeHtml(x.detail)}</td>
-           </tr>`).join("")}</tbody></table>`
-        : `<div class="text-sm text-mist">近 24h 暂无 OTP 相关告警</div>`;
+           </tr>`).join("")}</tbody></table></div>`
+        : `<div class="text-sm text-mist">近 24h 暂无 OTP 相关告警</div>`) + moreBtn;
+      $("btnMoreOTPAlerts")?.addEventListener("click", () => {
+        const from = new Date();
+        from.setDate(from.getDate() - 1);
+        const yyyy = from.getFullYear();
+        const mm = String(from.getMonth() + 1).padStart(2, "0");
+        const dd = String(from.getDate()).padStart(2, "0");
+        if ($("auditAction")) $("auditAction").value = "otp_limit_alert";
+        if ($("auditUser")) $("auditUser").value = "";
+        if ($("auditFrom")) $("auditFrom").value = `${yyyy}-${mm}-${dd}`;
+        if ($("auditTo")) $("auditTo").value = "";
+        pages.audits = 1;
+        switchView("audits");
+      });
     } catch (e) {
       $("dashCards").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
     }
@@ -526,6 +543,46 @@
     }
   }
 
+  function activateSubTab(viewEl, tabId, { load = true } = {}) {
+    if (!viewEl || !tabId) return;
+    viewEl.querySelectorAll(".subtab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.subtab === tabId);
+    });
+    viewEl.querySelectorAll(".subpanel").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.subpanel === tabId);
+    });
+    if (!load) return;
+    switch (tabId) {
+      case "tenants-list":
+        loadTenants();
+        break;
+      case "tenants-idp":
+        loadIdPs();
+        break;
+      case "channels-list":
+        loadChannels();
+        break;
+      case "channels-sms":
+        loadSMSChannel();
+        break;
+      case "users-list":
+        loadUsers();
+        break;
+      case "users-risk":
+        break;
+      case "invites-codes":
+        loadInvites();
+        break;
+      case "invites-joins":
+        loadJoins();
+        break;
+      case "invites-create":
+        break;
+      default:
+        break;
+    }
+  }
+
   function switchView(name) {
     document.querySelectorAll(".nav-item").forEach((el) => {
       el.classList.toggle("active", el.dataset.view === name);
@@ -535,14 +592,18 @@
     });
     $("pageTitle").textContent = titles[name][0];
     $("pageDesc").textContent = titles[name][1];
+
+    const viewEl = $(`view-${name}`);
+    if (viewEl && viewEl.hasAttribute("data-subtabs")) {
+      const active = viewEl.querySelector(".subtab.active") || viewEl.querySelector(".subtab");
+      if (active) activateSubTab(viewEl, active.dataset.subtab, { load: true });
+      return;
+    }
+
     if (name === "dashboard") loadDashboard();
-    if (name === "channels") { loadChannels(); loadSMSChannel(); }
     if (name === "playground") preparePlayground();
     if (name === "apps") loadApps();
-    if (name === "users") loadUsers();
     if (name === "audits") loadAudits();
-    if (name === "tenants") { loadTenants(); loadIdPs(); }
-    if (name === "invites") { loadInvites(); loadJoins(); }
     if (name === "roles") loadRoles();
   }
 
@@ -1354,10 +1415,18 @@
   $("persistAudits")?.addEventListener("click", () => exportAudits(true));
   $("refreshDashboard")?.addEventListener("click", loadDashboard);
   $("refreshSMS")?.addEventListener("click", loadSMSChannel);
-  $("refreshTenants")?.addEventListener("click", () => { loadTenants({ reset: true }); loadIdPs({ reset: true }); });
+  $("refreshTenants")?.addEventListener("click", () => loadTenants({ reset: true }));
   $("refreshInvites")?.addEventListener("click", () => loadInvites({ reset: true }));
   $("refreshJoins")?.addEventListener("click", () => loadJoins({ reset: true }));
   $("refreshRoles")?.addEventListener("click", () => loadRoles({ reset: true }));
+
+  document.querySelectorAll("[data-subtabs]").forEach((viewEl) => {
+    viewEl.querySelectorAll(".subtab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activateSubTab(viewEl, btn.dataset.subtab, { load: true });
+      });
+    });
+  });
 
   $("btnCreateTenant")?.addEventListener("click", async () => {
     const values = await uiForm("新建租户", [

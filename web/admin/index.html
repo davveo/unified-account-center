@@ -195,97 +195,134 @@
       </section>
 
       <!-- Tenants -->
-      <section id="view-tenants" class="view space-y-4">
-        <article class="panel">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="panel-title">租户列表</h2>
-            <div class="action-row">
-              <button id="btnCreateTenant" type="button" class="btn btn-primary">新建租户</button>
-              <button id="refreshTenants" type="button" class="btn btn-ghost">刷新</button>
+      <section id="view-tenants" class="view" data-subtabs>
+        <div class="subtabs" role="tablist">
+          <button type="button" class="subtab active" data-subtab="tenants-list" role="tab">租户列表</button>
+          <button type="button" class="subtab" data-subtab="tenants-idp" role="tab">企业 SSO</button>
+        </div>
+        <div class="subpanel active" data-subpanel="tenants-list">
+          <article class="panel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">租户列表</h2>
+              <div class="action-row">
+                <button id="btnCreateTenant" type="button" class="btn btn-primary">新建租户</button>
+                <button id="refreshTenants" type="button" class="btn btn-ghost">刷新</button>
+              </div>
             </div>
-          </div>
-          <div id="tenantsTable" class="mt-4">加载中…</div>
-        </article>
-        <article class="panel">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="panel-title">企业 SSO IdP</h2>
-            <button id="btnUpsertIdP" type="button" class="btn btn-ghost">新增 / 更新域名路由</button>
-          </div>
-          <div id="idpTable" class="mt-4">加载中…</div>
-        </article>
+            <div id="tenantsTable" class="mt-4">加载中…</div>
+          </article>
+        </div>
+        <div class="subpanel" data-subpanel="tenants-idp">
+          <article class="panel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">企业 SSO IdP</h2>
+              <button id="btnUpsertIdP" type="button" class="btn btn-ghost">新增 / 更新域名路由</button>
+            </div>
+            <div id="idpTable" class="mt-4">加载中…</div>
+          </article>
+        </div>
       </section>
 
       <!-- Channels -->
-      <section id="view-channels" class="view space-y-4">
-        <article class="panel">
-          <h2 class="panel-title">平台支持的对接渠道</h2>
-          <p class="mt-2 text-sm text-mist">以下为认证中台已实现的登录方式。应用侧通过 <code class="font-mono text-xs">allowed_methods</code> 按需启用。</p>
-          <div id="channelsGrid" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">加载中…</div>
-        </article>
-        <article class="panel">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="panel-title">短信通道热更新</h2>
-            <button id="refreshSMS" type="button" class="btn btn-ghost">刷新</button>
-          </div>
-          <p class="mt-2 text-sm text-mist">无需重启即可在 mock / mq 之间切换短信发送实现；OAuth Provider 密钥在渠道配置中热更新。</p>
-          <div id="smsChannelBox" class="mt-4 space-y-3">加载中…</div>
-        </article>
+      <section id="view-channels" class="view" data-subtabs>
+        <div class="subtabs" role="tablist">
+          <button type="button" class="subtab active" data-subtab="channels-list" role="tab">登录方式</button>
+          <button type="button" class="subtab" data-subtab="channels-sms" role="tab">短信通道</button>
+        </div>
+        <div class="subpanel active" data-subpanel="channels-list">
+          <article class="panel">
+            <h2 class="panel-title">平台支持的对接渠道</h2>
+            <p class="mt-2 text-sm text-mist">以下为认证中台已实现的登录方式。应用侧通过 <code class="font-mono text-xs">allowed_methods</code> 按需启用。OAuth Provider 可在此热更新。</p>
+            <div id="channelsGrid" class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">加载中…</div>
+          </article>
+        </div>
+        <div class="subpanel" data-subpanel="channels-sms">
+          <article class="panel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">短信通道热更新</h2>
+              <button id="refreshSMS" type="button" class="btn btn-ghost">刷新</button>
+            </div>
+            <p class="mt-2 text-sm text-mist">无需重启即可在 mock / mq 之间切换短信发送实现。</p>
+            <div id="smsChannelBox" class="mt-4 space-y-3">加载中…</div>
+          </article>
+        </div>
       </section>
 
       <!-- Users -->
-      <section id="view-users" class="view space-y-4">
-        <article class="panel">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 class="panel-title">用户管理</h2>
-            <div class="flex flex-wrap items-center gap-2">
-              <input id="userQuery" class="input w-full sm:w-56" placeholder="搜索 user_id / 昵称" />
-              <button id="refreshUsers" type="button" class="btn btn-ghost">刷新</button>
+      <section id="view-users" class="view" data-subtabs>
+        <div class="subtabs" role="tablist">
+          <button type="button" class="subtab active" data-subtab="users-list" role="tab">用户列表</button>
+          <button type="button" class="subtab" data-subtab="users-risk" role="tab">风控解锁</button>
+        </div>
+        <div class="subpanel active" data-subpanel="users-list">
+          <article class="panel">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 class="panel-title">用户管理</h2>
+              <div class="flex flex-wrap items-center gap-2">
+                <input id="userQuery" class="input w-full sm:w-56" placeholder="搜索 user_id / 昵称" />
+                <button id="refreshUsers" type="button" class="btn btn-ghost">刷新</button>
+              </div>
             </div>
-          </div>
-          <div id="usersTable" class="mt-4 overflow-x-auto">加载中…</div>
-        </article>
-        <article class="panel">
-          <h2 class="panel-title">风控解锁</h2>
-          <form id="unlockRiskForm" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div class="sm:w-40">
-              <label class="field-label" for="unlockKind">类型</label>
-              <select id="unlockKind" name="kind" class="input">
-                <option value="id">账号 identity</option>
-                <option value="ip">IP</option>
-              </select>
-            </div>
-            <div class="min-w-0 flex-1">
-              <label class="field-label" for="unlockKey">Key</label>
-              <input id="unlockKey" name="key" class="input" required placeholder="手机号/邮箱 或 IP" />
-            </div>
-            <button type="submit" class="btn btn-primary shrink-0">解除锁定</button>
-          </form>
-        </article>
+            <div id="usersTable" class="mt-4 overflow-x-auto">加载中…</div>
+          </article>
+        </div>
+        <div class="subpanel" data-subpanel="users-risk">
+          <article class="panel">
+            <h2 class="panel-title">风控解锁</h2>
+            <p class="mt-2 text-sm text-mist">解除因连续登录失败等原因锁定的账号 identity 或 IP。</p>
+            <form id="unlockRiskForm" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div class="sm:w-40">
+                <label class="field-label" for="unlockKind">类型</label>
+                <select id="unlockKind" name="kind" class="input">
+                  <option value="id">账号 identity</option>
+                  <option value="ip">IP</option>
+                </select>
+              </div>
+              <div class="min-w-0 flex-1">
+                <label class="field-label" for="unlockKey">Key</label>
+                <input id="unlockKey" name="key" class="input" required placeholder="手机号/邮箱 或 IP" />
+              </div>
+              <button type="submit" class="btn btn-primary shrink-0">解除锁定</button>
+            </form>
+          </article>
+        </div>
       </section>
 
       <!-- Invites -->
-      <section id="view-invites" class="view space-y-4">
-        <article class="panel">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="panel-title">邀请码</h2>
-            <div class="action-row">
-              <button id="btnCreateInvite" type="button" class="btn btn-primary">创建邀请</button>
-              <button id="refreshInvites" type="button" class="btn btn-ghost">刷新</button>
+      <section id="view-invites" class="view" data-subtabs>
+        <div class="subtabs" role="tablist">
+          <button type="button" class="subtab active" data-subtab="invites-codes" role="tab">邀请码</button>
+          <button type="button" class="subtab" data-subtab="invites-joins" role="tab">入驻审批</button>
+          <button type="button" class="subtab" data-subtab="invites-create" role="tab">建用户</button>
+        </div>
+        <div class="subpanel active" data-subpanel="invites-codes">
+          <article class="panel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">邀请码</h2>
+              <div class="action-row">
+                <button id="btnCreateInvite" type="button" class="btn btn-primary">创建邀请</button>
+                <button id="refreshInvites" type="button" class="btn btn-ghost">刷新</button>
+              </div>
             </div>
-          </div>
-          <div id="invitesTable" class="mt-4">加载中…</div>
-        </article>
-        <article class="panel">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="panel-title">入驻审批</h2>
-            <button id="refreshJoins" type="button" class="btn btn-ghost">刷新</button>
-          </div>
-          <div id="joinsTable" class="mt-4">加载中…</div>
-        </article>
-        <article class="panel">
-          <h2 class="panel-title">管理员建用户</h2>
-          <button id="btnCreateUser" type="button" class="btn btn-primary mt-3">创建用户并下发初始密码</button>
-        </article>
+            <div id="invitesTable" class="mt-4">加载中…</div>
+          </article>
+        </div>
+        <div class="subpanel" data-subpanel="invites-joins">
+          <article class="panel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">入驻审批</h2>
+              <button id="refreshJoins" type="button" class="btn btn-ghost">刷新</button>
+            </div>
+            <div id="joinsTable" class="mt-4">加载中…</div>
+          </article>
+        </div>
+        <div class="subpanel" data-subpanel="invites-create">
+          <article class="panel">
+            <h2 class="panel-title">管理员建用户</h2>
+            <p class="mt-2 text-sm text-mist">直接创建账号并可下发临时密码；适合运营开通指定用户。</p>
+            <button id="btnCreateUser" type="button" class="btn btn-primary mt-4">创建用户并下发初始密码</button>
+          </article>
+        </div>
       </section>
 
       <!-- Roles -->
