@@ -39,6 +39,17 @@
         <button type="submit" class="btn primary">完成验证</button>
       </form>
       <div id="oauthBlock" class="oauth hidden"></div>
+      <div id="ssoBlock" class="form">
+        <label>企业邮箱 SSO</label>
+        <div class="row">
+          <input id="ssoEmail" placeholder="name@company.com" />
+          <button type="button" id="btnSSO" class="btn ghost">发现 SSO</button>
+        </div>
+        <div id="ssoResult" class="sub"></div>
+      </div>
+      <div id="passkeyBlock" class="form hidden">
+        <button type="button" id="btnPasskeyLogin" class="btn primary">使用 Passkey 登录</button>
+      </div>
       <p id="err" class="err hidden"></p>
     </section>
   </main>

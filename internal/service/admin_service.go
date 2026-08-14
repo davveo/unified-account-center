@@ -138,6 +138,8 @@ type AppView struct {
 	ThemeColor     string   `json:"theme_color"`
 	AccessTTL      int64    `json:"access_ttl"`
 	RefreshTTL     int64    `json:"refresh_ttl"`
+	RequireMFA         bool `json:"require_mfa"`
+	PasswordMaxAgeDays int  `json:"password_max_age_days"`
 	Status         string   `json:"status"`
 	CreatedAt      string   `json:"created_at"`
 	UpdatedAt      string   `json:"updated_at"`
@@ -324,6 +326,8 @@ func toAppView(app *model.App) AppView {
 		ThemeColor:     app.ThemeColor,
 		AccessTTL:      app.AccessTTL,
 		RefreshTTL:     app.RefreshTTL,
+		RequireMFA:         app.RequireMFA,
+		PasswordMaxAgeDays: app.PasswordMaxAgeDays,
 		Status:         app.Status,
 		CreatedAt:      app.CreatedAt.Format("2006-01-02 15:04:05"),
 		UpdatedAt:      app.UpdatedAt.Format("2006-01-02 15:04:05"),

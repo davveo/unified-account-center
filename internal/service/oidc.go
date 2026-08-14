@@ -77,7 +77,9 @@ func (s *AuthService) OpenIDConfiguration(baseURL string) map[string]interface{}
 		"userinfo_endpoint":                     base + "/api/v1/auth/userinfo",
 		"jwks_uri":                              base + "/.well-known/jwks.json",
 		"introspection_endpoint":                base + "/api/v1/auth/introspect",
-		"revocation_endpoint":                   base + "/api/v1/auth/logout",
+		// RFC 7009 吊销端点；logout 仍作为 RP-initiated end_session 使用
+		"revocation_endpoint":                   base + "/api/v1/auth/revoke",
+		"end_session_endpoint":                  base + "/api/v1/auth/logout",
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{s.cfg.JWT.Alg},
@@ -86,6 +88,7 @@ func (s *AuthService) OpenIDConfiguration(baseURL string) map[string]interface{}
 		"claims_supported": []string{
 			"sub", "name", "picture", "email", "email_verified",
 			"phone_number", "phone_number_verified", "tenant_id", "roles",
+			"iss", "aud", "exp", "iat", "auth_time",
 		},
 	}
 }

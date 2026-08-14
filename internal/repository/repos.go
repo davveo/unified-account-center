@@ -30,6 +30,12 @@ type CredentialRepo interface {
 	Ensure(ctx context.Context, userID string) (*model.Credential, error)
 }
 
+type PasswordHistoryRepo interface {
+	ListRecent(ctx context.Context, userID string, limit int) ([]model.PasswordHistory, error)
+	Append(ctx context.Context, userID, hash string) error
+	Trim(ctx context.Context, userID string, keep int) error
+}
+
 type WebAuthnRepo interface {
 	Create(ctx context.Context, cred *model.WebAuthnCredential) error
 	ListByUserID(ctx context.Context, userID string) ([]model.WebAuthnCredential, error)
@@ -95,10 +101,11 @@ type AuditRepo interface {
 }
 
 type Repos struct {
-	DB         *gorm.DB
-	User       UserRepo
-	Identity   IdentityRepo
-	Credential CredentialRepo
+	DB              *gorm.DB
+	User            UserRepo
+	Identity        IdentityRepo
+	Credential      CredentialRepo
+	PasswordHistory PasswordHistoryRepo
 	Challenge  ChallengeRepo
 	App        AppRepo
 	Refresh    RefreshTokenRepo
@@ -118,7 +125,8 @@ func NewRepos(db *gorm.DB) *Repos {
 		DB:         db,
 		User:       NewUserRepo(db),
 		Identity:   NewIdentityRepo(db),
-		Credential: NewCredentialRepo(db),
+		Credential:      NewCredentialRepo(db),
+		PasswordHistory: NewPasswordHistoryRepo(db),
 		Challenge:  NewChallengeRepo(db),
 		App:        NewAppRepo(db),
 		Refresh:    NewRefreshTokenRepo(db),
@@ -139,6 +147,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.User{},
 		&model.Identity{},
 		&model.Credential{},
+		&model.PasswordHistory{},
 		&model.AuthChallenge{},
 		&model.OAuthAccount{},
 		&model.App{},

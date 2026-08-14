@@ -28,6 +28,8 @@ type UpdateAppRequest struct {
 	ThemeColor     *string  `json:"theme_color"`
 	AccessTTL      *int64   `json:"access_ttl"`
 	RefreshTTL     *int64   `json:"refresh_ttl"`
+	RequireMFA         *bool `json:"require_mfa"`
+	PasswordMaxAgeDays *int  `json:"password_max_age_days"`
 }
 
 func (s *AdminService) UpdateApp(ctx context.Context, clientID string, req UpdateAppRequest) (*AppView, error) {
@@ -86,6 +88,12 @@ func (s *AdminService) UpdateApp(ctx context.Context, clientID string, req Updat
 	}
 	if req.RefreshTTL != nil && *req.RefreshTTL > 0 {
 		app.RefreshTTL = *req.RefreshTTL
+	}
+	if req.RequireMFA != nil {
+		app.RequireMFA = *req.RequireMFA
+	}
+	if req.PasswordMaxAgeDays != nil {
+		app.PasswordMaxAgeDays = *req.PasswordMaxAgeDays
 	}
 	if err := s.repos.App.Update(ctx, app); err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "更新应用失败", err)

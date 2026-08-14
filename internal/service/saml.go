@@ -192,6 +192,52 @@ func (s *AuthService) publicBase() string {
 	return "http://127.0.0.1:8080"
 }
 
+// SAMLMetadata 返回 SP Entity Descriptor（供 IdP 导入）。
+func (s *AuthService) SAMLMetadata() string {
+	base := s.publicBase()
+	entityID := base + "/saml/metadata"
+	acs := base + "/api/v1/auth/saml/acs"
+	slo := base + "/api/v1/auth/saml/slo"
+	return fmt.Sprintf(`<?xml version="1.0"?>
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="%s">
+  <md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+    <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="%s" index="0" isDefault="true"/>
+    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="%s"/>
+  </md:SPSSODescriptor>
+</md:EntityDescriptor>`, entityID, acs, slo)
+}
+
+// FinishSAMLSLO 最小 SLO：按 NameID 找到用户并强退会话。
+func (s *AuthService) FinishSAMLSLO(ctx context.Context, meta RequestMeta, logoutRequestB64 string) error {
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(logoutRequestB64))
+	if err != nil {
+		return errcode.New(errcode.BadRequest, "LogoutRequest 无效")
+	}
+	nameID := extractBetween(string(raw), "<saml:NameID", "</saml:NameID>")
+	if nameID == "" {
+		nameID = extractBetween(string(raw), "<NameID", "</NameID>")
+	}
+	nameID = strings.ToLower(strings.TrimSpace(stripTag(nameID)))
+	if nameID == "" {
+		return errcode.New(errcode.BadRequest, "无法解析 NameID")
+	}
+	app, err := s.requireApp(ctx, meta.ClientID)
+	if err != nil {
+		return err
+	}
+	id, _ := s.repos.Identity.FindByUnique(ctx, app.TenantID, model.IdentityEmail, "", nameID)
+	if id == nil {
+		return nil
+	}
+	_ = s.repos.Refresh.RevokeAllByUser(ctx, id.UserID, app.ClientID, time.Now())
+	if s.redis != nil {
+		_, _ = s.redis.BumpUserVersion(ctx, id.UserID)
+	}
+	s.audit(ctx, app, id.UserID, "saml_slo", true, nameID, meta)
+	return nil
+}
+
 func deflateRaw(b []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	w, err := flate.NewWriter(&buf, flate.DefaultCompression)

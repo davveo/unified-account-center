@@ -578,7 +578,10 @@
             <td class="font-mono text-xs">${escapeHtml(w.url)}</td>
             <td class="text-xs">${escapeHtml((w.events || []).join(",") || "*")}</td>
             <td>${w.enabled ? "启用" : "停用"}</td>
-            <td><button type="button" class="btn btn-ghost btn-xs" data-del-wh="${w.id}">删除</button></td>
+            <td class="action-row">
+              <button type="button" class="btn btn-ghost btn-xs" data-test-wh="${w.id}">试投递</button>
+              <button type="button" class="btn btn-ghost btn-xs" data-del-wh="${w.id}">删除</button>
+            </td>
           </tr>`).join("")}
         </tbody></table>`
         : `<div class="text-sm text-mist">暂无订阅</div>`;
@@ -590,19 +593,38 @@
           loadWebhooks();
         });
       });
+      $("webhooksTable").querySelectorAll("[data-test-wh]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            const res = await api(`/api/v1/admin/webhooks/${btn.dataset.testWh}/test`, { method: "POST", body: "{}" });
+            toast(`试投递已发送 #${res.delivery_id}`);
+            loadWebhooks();
+          } catch (e) { uiAlert(e.message); }
+        });
+      });
       const del = await api("/api/v1/admin/webhooks/deliveries?limit=20");
       const rows = del.items || [];
       $("webhookDeliveries").innerHTML = rows.length
-        ? `<table class="table"><thead><tr><th>事件</th><th>状态</th><th>尝试</th><th>HTTP</th><th>错误</th></tr></thead><tbody>
+        ? `<table class="table"><thead><tr><th>事件</th><th>状态</th><th>尝试</th><th>HTTP</th><th>错误</th><th></th></tr></thead><tbody>
           ${rows.map((r) => `<tr>
             <td class="font-mono text-xs">${escapeHtml(r.event_type)}</td>
             <td>${escapeHtml(r.status)}</td>
             <td>${r.attempts}</td>
             <td>${r.last_http_status || "-"}</td>
             <td class="text-xs">${escapeHtml(r.last_error || "")}</td>
+            <td><button type="button" class="btn btn-ghost btn-xs" data-replay="${r.id}">重放</button></td>
           </tr>`).join("")}
         </tbody></table>`
         : `<div class="text-sm text-mist">暂无投递</div>`;
+      $("webhookDeliveries")?.querySelectorAll("[data-replay]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            const res = await api(`/api/v1/admin/webhooks/deliveries/${btn.dataset.replay}/replay`, { method: "POST", body: "{}" });
+            toast(`已重放 #${res.delivery_id}`);
+            loadWebhooks();
+          } catch (e) { uiAlert(e.message); }
+        });
+      });
     } catch (e) {
       $("webhooksTable").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
     }
@@ -1008,11 +1030,13 @@
         loadApps();
       } else if (act === "brand") {
         const app = state.apps.find((a) => a.client_id === clientId) || {};
-        const values = await uiForm("托管登录主题", [
+        const values = await uiForm("托管登录主题与策略", [
           { name: "login_title", label: "登录页标题", value: app.login_title || "欢迎登录", required: true },
           { name: "logo_url", label: "Logo URL", value: app.logo_url || "", placeholder: "可空" },
           { name: "theme_color", label: "主题色", value: app.theme_color || "#0f766e", placeholder: "#0f766e" },
           { name: "require_pkce", label: "强制 PKCE", type: "checkbox", checked: !!app.require_pkce },
+          { name: "require_mfa", label: "强制 MFA", type: "checkbox", checked: !!app.require_mfa },
+          { name: "password_max_age_days", label: "密码最长天数（0=跟随全局）", value: String(app.password_max_age_days || 0) },
         ]);
         if (!values) return;
         await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}`, {
@@ -1022,9 +1046,11 @@
             logo_url: values.logo_url,
             theme_color: values.theme_color,
             require_pkce: values.require_pkce,
+            require_mfa: values.require_mfa,
+            password_max_age_days: Number(values.password_max_age_days || 0),
           }),
         });
-        toast("主题已保存");
+        toast("主题与策略已保存");
         loadApps();
       } else if (act === "rotate") {
         const ok = await uiConfirm("确认轮换密钥？旧 secret 将立即失效。", {
@@ -1689,6 +1715,25 @@
       await uiAlert(`user_id: ${data.user_id}\n${data.temp_password ? "临时密码: " + data.temp_password : "已使用指定密码"}`, {
         title: "用户已创建", mono: true,
       });
+    } catch (e) { uiAlert(e.message); }
+  });
+
+  $("btnImportUsers")?.addEventListener("click", async () => {
+    const values = await uiForm("CSV 批量导入用户", [
+      { name: "tenant_id", label: "tenant_id", value: "default" },
+      { name: "csv", label: "CSV（phone,email,display_name,password,role）", type: "textarea",
+        value: "phone,email,display_name,password,role\n13800138000,,示例用户,,\n", required: true },
+    ], { wide: true });
+    if (!values) return;
+    try {
+      const data = await api("/api/v1/admin/users/import", {
+        method: "POST",
+        body: JSON.stringify({ tenant_id: values.tenant_id, csv: values.csv }),
+      });
+      await uiAlert(`成功 ${data.created}，失败 ${data.failed}${data.errors && data.errors.length ? "\n" + data.errors.slice(0, 5).join("\n") : ""}`, {
+        mono: true, title: "导入结果",
+      });
+      loadUsers({ reset: true });
     } catch (e) { uiAlert(e.message); }
   });
 

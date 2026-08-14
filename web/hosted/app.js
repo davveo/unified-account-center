@@ -69,6 +69,7 @@
         code_challenge: codeChallenge,
         access_token: token.access_token,
         refresh_token: token.refresh_token,
+        id_token: token.id_token,
         expire_in: token.expire_in,
         refresh_expire_in: token.refresh_expire_in,
         device_id: token.device_id || deviceId,
@@ -95,11 +96,30 @@
     document.querySelectorAll(".tab").forEach((el) => el.classList.toggle("active", el.dataset.m === m));
     const otp = m.endsWith("_otp");
     const pwd = m.endsWith("_password");
+    const isOAuth = m === "oauth2";
+    const isPasskey = m === "passkey";
     $("otpBlock").classList.toggle("hidden", !otp);
     $("pwdBlock").classList.toggle("hidden", !pwd);
-    $("loginForm").classList.toggle("hidden", m === "oauth2");
-    $("oauthBlock").classList.toggle("hidden", m !== "oauth2");
+    $("loginForm").classList.toggle("hidden", isOAuth || isPasskey);
+    $("oauthBlock").classList.toggle("hidden", !isOAuth);
+    $("passkeyBlock").classList.toggle("hidden", !isPasskey);
     $("identityLabel").textContent = m.startsWith("email") ? "邮箱" : "手机号";
+  }
+
+  function b64urlToBuf(s) {
+    const pad = "=".repeat((4 - (s.length % 4)) % 4);
+    const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
+    const str = atob(b64);
+    const buf = new ArrayBuffer(str.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < str.length; i++) view[i] = str.charCodeAt(i);
+    return buf;
+  }
+  function bufToB64url(buf) {
+    const bytes = new Uint8Array(buf);
+    let s = "";
+    bytes.forEach((b) => { s += String.fromCharCode(b); });
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
   async function load() {
@@ -143,10 +163,13 @@
       };
       oauthBox.appendChild(a);
     });
+    if (hintEmail) {
+      $("identity").value = hintEmail;
+      $("ssoEmail").value = hintEmail;
+    }
     const first = (cfg.allowed_methods || [])[0];
     if (first) selectMethod(first);
     if (hintEmail) {
-      $("identity").value = hintEmail;
       if ((cfg.allowed_methods || []).includes("email_otp")) selectMethod("email_otp");
       else if ((cfg.allowed_methods || []).includes("email_password")) selectMethod("email_password");
     }
@@ -154,6 +177,66 @@
       $("subtitle").textContent = (cfg.name || "统一账户中台") + " · 邀请注册";
     }
   }
+
+  $("btnSSO").onclick = async () => {
+    showErr("");
+    try {
+      const email = ($("ssoEmail").value || $("identity").value || "").trim();
+      if (!email) { showErr("请输入企业邮箱"); return; }
+      const data = await api("/api/v1/auth/sso/discover", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      const box = $("ssoResult");
+      if (!data || (!data.provider && !data.saml && !data.redirect_url && !data.domain)) {
+        box.textContent = "未发现企业 SSO 配置";
+        return;
+      }
+      const domain = data.domain || email.split("@")[1] || "";
+      if (data.protocol === "saml" || data.saml || (data.provider && String(data.provider).includes("saml"))) {
+        box.innerHTML = `<a href="/api/v1/auth/saml/start?domain=${encodeURIComponent(domain)}&relay_state=${encodeURIComponent(state || clientId)}&redirect=1">前往企业 SAML 登录</a>`;
+        return;
+      }
+      box.textContent = JSON.stringify(data);
+      if (data.redirect_url) location.href = data.redirect_url;
+    } catch (e) {
+      showErr(e.message);
+    }
+  };
+
+  $("btnPasskeyLogin").onclick = async () => {
+    showErr("");
+    try {
+      const begin = await api("/api/v1/auth/passkey/login/begin", {
+        method: "POST",
+        body: JSON.stringify({ user_id: "" }),
+      });
+      const publicKey = begin.publicKey || begin.options || begin;
+      const pk = publicKey.publicKey || publicKey;
+      pk.challenge = b64urlToBuf(pk.challenge);
+      (pk.allowCredentials || []).forEach((c) => { c.id = b64urlToBuf(c.id); });
+      const cred = await navigator.credentials.get({ publicKey: pk });
+      const body = {
+        id: cred.id,
+        rawId: bufToB64url(cred.rawId),
+        type: cred.type,
+        response: {
+          clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+          authenticatorData: bufToB64url(cred.response.authenticatorData),
+          signature: bufToB64url(cred.response.signature),
+          userHandle: cred.response.userHandle ? bufToB64url(cred.response.userHandle) : null,
+        },
+      };
+      const login = await api("/api/v1/auth/passkey/login/finish", {
+        method: "POST",
+        headers: { "X-WebAuthn-Session": begin.session_id || "", "X-Device-Id": deviceId },
+        body: JSON.stringify(body),
+      });
+      await finishWithLogin(login);
+    } catch (e) {
+      showErr(e.message || String(e));
+    }
+  };
 
   $("sendOtp").onclick = async () => {
     showErr("");

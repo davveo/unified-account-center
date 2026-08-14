@@ -74,6 +74,12 @@ pre {
 .msg { min-height: 1.2em; color: var(--mist); font-size: 13px; }
 .msg.err { color: #b91c1c; }
 .msg.ok { color: #047857; }
+.profile-form { display: grid; gap: 4px; }
+.profile-raw { margin-top: 12px; }
+.profile-raw summary { cursor: pointer; color: var(--mist); font-size: 13px; margin-bottom: 8px; }
+.toggle-row { display: flex; align-items: center; gap: 8px; }
+.toggle-row input { width: auto; margin: 0; }
+h3 { margin: 20px 0 8px; font-size: 16px; }
 @media (max-width: 800px) {
   .hero, .row { grid-template-columns: 1fr; }
 }

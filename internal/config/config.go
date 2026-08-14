@@ -88,6 +88,7 @@ type PasswordConfig struct {
 	MinLength           int  `yaml:"min_length"`
 	RequireLetterNumber bool `yaml:"require_letter_number"`
 	MaxAgeDays          int  `yaml:"max_age_days"`         // 密码最长有效期，0=不过期
+	HistoryCount        int  `yaml:"history_count"`        // 禁止重复使用最近 N 次密码，0=禁用
 	NotifyLoginEmail    bool `yaml:"notify_login_email"`   // 新设备登录邮件提醒
 	NotifyLoginSMS      bool `yaml:"notify_login_sms"`     // 新设备登录短信提醒
 }

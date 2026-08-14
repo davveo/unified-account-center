@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -136,7 +137,8 @@ func passwordChangeAllowed(c *gin.Context) bool {
 	}
 	switch path {
 	case "/api/v1/auth/password/set", "/api/v1/auth/step-up", "/api/v1/auth/me", "/api/v1/auth/logout",
-		"/api/v1/auth/userinfo", "/api/v1/auth/notifications", "/api/v1/auth/notifications/:id/read":
+		"/api/v1/auth/userinfo", "/api/v1/auth/notifications", "/api/v1/auth/notifications/:id/read",
+		"/api/v1/auth/preferences":
 		return true
 	default:
 		return strings.HasPrefix(path, "/api/v1/auth/notifications")
@@ -197,3 +199,39 @@ const (
 	CtxAdminRole   = "admin_role"
 	CtxAdminTenant = "admin_tenant"
 )
+
+// AdminRequire 在 AdminAuth 之后校验 write/admin 能力；viewer 仅能读。
+func AdminRequire(need string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		roleRaw, _ := c.Get(CtxAdminRole)
+		roles := service.ParseAdminRoles(fmt.Sprint(roleRaw))
+		if service.HasAdminCapability(roles, need) {
+			c.Next()
+			return
+		}
+		response.Fail(c, errcode.ForbiddenApp, "权限不足")
+		c.Abort()
+	}
+}
+
+// AdminTenantFilter 非平台超管时强制使用其 JWT 租户，忽略跨租户查询参数。
+// 返回 (effectiveTenantID, isPlatform)。platform 且 query 为空表示不限制租户。
+func AdminTenantFilter(c *gin.Context, requested string) (string, bool) {
+	roleRaw, _ := c.Get(CtxAdminRole)
+	roles := service.ParseAdminRoles(fmt.Sprint(roleRaw))
+	if service.IsPlatformAdmin(roles) {
+		return strings.TrimSpace(requested), true
+	}
+	tid, _ := c.Get(CtxAdminTenant)
+	s, _ := tid.(string)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		if v, ok := c.Get(CtxTenantID); ok {
+			s, _ = v.(string)
+		}
+	}
+	if s == "" {
+		s = "default"
+	}
+	return s, false
+}

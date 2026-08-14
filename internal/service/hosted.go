@@ -13,17 +13,19 @@ import (
 const hostedCodeTTL = 5 * time.Minute
 
 type HostedConfig struct {
-	ClientID       string   `json:"client_id"`
-	Name           string   `json:"name"`
-	LoginTitle     string   `json:"login_title"`
-	LogoURL        string   `json:"logo_url"`
-	ThemeColor     string   `json:"theme_color"`
-	AllowedMethods []string `json:"allowed_methods"`
-	OAuthProviders []string `json:"oauth_providers"`
-	RequirePKCE    bool     `json:"require_pkce"`
-	CaptchaEnabled bool     `json:"captcha_enabled"`
-	CaptchaProvider string  `json:"captcha_provider"`
-	CaptchaSiteKey string   `json:"captcha_site_key,omitempty"`
+	ClientID        string   `json:"client_id"`
+	Name            string   `json:"name"`
+	LoginTitle      string   `json:"login_title"`
+	LogoURL         string   `json:"logo_url"`
+	ThemeColor      string   `json:"theme_color"`
+	AllowedMethods  []string `json:"allowed_methods"`
+	OAuthProviders  []string `json:"oauth_providers"`
+	RequirePKCE     bool     `json:"require_pkce"`
+	RequireMFA      bool     `json:"require_mfa"`
+	CaptchaEnabled  bool     `json:"captcha_enabled"`
+	CaptchaProvider string   `json:"captcha_provider"`
+	CaptchaSiteKey  string   `json:"captcha_site_key,omitempty"`
+	SSOEnabled      bool     `json:"sso_enabled"`
 }
 
 func (s *AuthService) HostedConfig(ctx context.Context, clientID string) (*HostedConfig, error) {
@@ -48,9 +50,11 @@ func (s *AuthService) HostedConfig(ctx context.Context, clientID string) (*Hoste
 		AllowedMethods:  append([]string{}, app.AllowedMethods...),
 		OAuthProviders:  append([]string{}, app.OAuthProviders...),
 		RequirePKCE:     app.RequirePKCE,
+		RequireMFA:      app.RequireMFA,
 		CaptchaEnabled:  s.cfg.Captcha.Enabled,
 		CaptchaProvider: s.cfg.Captcha.Provider,
 		CaptchaSiteKey:  s.cfg.Captcha.SiteKey,
+		SSOEnabled:      true,
 	}, nil
 }
 

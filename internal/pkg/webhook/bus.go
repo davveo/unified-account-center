@@ -223,6 +223,60 @@ func (b *Bus) flushRetries(ctx context.Context) {
 	}
 }
 
+// TestEndpoint 向指定端点发送试投递事件。
+func (b *Bus) TestEndpoint(ctx context.Context, endpointID uint64) (uint64, error) {
+	if b == nil || b.db == nil {
+		return 0, fmt.Errorf("webhook bus unavailable")
+	}
+	var ep model.WebhookEndpoint
+	if err := b.db.WithContext(ctx).First(&ep, endpointID).Error; err != nil {
+		return 0, err
+	}
+	ev := Event{
+		Type: "webhook.test", ID: idgen.New("evt"),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Data:      map[string]interface{}{"ping": true},
+	}
+	payload, _ := json.Marshal(ev)
+	now := time.Now()
+	d := model.WebhookDelivery{
+		EndpointID: ep.ID, EventID: ev.ID, EventType: ev.Type,
+		PayloadJSON: string(payload), Status: model.WebhookDeliveryPending,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := b.db.WithContext(ctx).Create(&d).Error; err != nil {
+		return 0, err
+	}
+	go b.deliver(ep, d.ID, string(payload), ev.ID, ev.Type)
+	return d.ID, nil
+}
+
+// ReplayDelivery 重放一条投递（含死信）。
+func (b *Bus) ReplayDelivery(ctx context.Context, deliveryID uint64) (uint64, error) {
+	if b == nil || b.db == nil {
+		return 0, fmt.Errorf("webhook bus unavailable")
+	}
+	var old model.WebhookDelivery
+	if err := b.db.WithContext(ctx).First(&old, deliveryID).Error; err != nil {
+		return 0, err
+	}
+	var ep model.WebhookEndpoint
+	if err := b.db.WithContext(ctx).First(&ep, old.EndpointID).Error; err != nil {
+		return 0, err
+	}
+	now := time.Now()
+	d := model.WebhookDelivery{
+		EndpointID: ep.ID, EventID: old.EventID + "-replay", EventType: old.EventType,
+		PayloadJSON: old.PayloadJSON, Status: model.WebhookDeliveryPending,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := b.db.WithContext(ctx).Create(&d).Error; err != nil {
+		return 0, err
+	}
+	go b.deliver(ep, d.ID, old.PayloadJSON, d.EventID, d.EventType)
+	return d.ID, nil
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

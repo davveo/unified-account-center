@@ -12,6 +12,28 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+func TestIssueAndParseIDToken(t *testing.T) {
+	m := jwtutil.NewManager("secret", "https://issuer.example")
+	now := time.Now()
+	tok, jti, _, err := m.IssueIDToken("u1", "client-app", "tenant-1", time.Hour, jwtutil.WithAuthTime(now))
+	if err != nil || tok == "" || jti == "" {
+		t.Fatal(err)
+	}
+	claims, err := m.ParseIDToken(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Subject != "u1" || claims.UserID != "u1" || claims.TenantID != "tenant-1" {
+		t.Fatalf("%+v", claims)
+	}
+	if len(claims.Audience) != 1 || claims.Audience[0] != "client-app" {
+		t.Fatalf("aud=%v", claims.Audience)
+	}
+	if claims.Issuer != "https://issuer.example" || claims.AuthTime == nil {
+		t.Fatalf("iss=%q auth_time=%v", claims.Issuer, claims.AuthTime)
+	}
+}
+
 func TestIssueAndParse(t *testing.T) {
 	m := jwtutil.NewManager("secret", "issuer")
 	tok, jti, _, err := m.IssueAccess("u1", "c1", "default", time.Hour, []string{"user"}, "user")

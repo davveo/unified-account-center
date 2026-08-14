@@ -89,6 +89,16 @@
   async function refreshMe() {
     const data = await api("/api/v1/auth/me");
     showJSON($("outProfile"), data);
+    const user = data.user || {};
+    $("profileUserId").value = user.user_id || "";
+    $("profileDisplayName").value = user.display_name || "";
+    $("profileAvatar").value = user.avatar || "";
+    if (typeof user.pref_notify_email === "boolean") {
+      $("prefNotifyEmail").checked = user.pref_notify_email;
+    }
+    if (typeof user.pref_notify_sms === "boolean") {
+      $("prefNotifySMS").checked = user.pref_notify_sms;
+    }
     const must = !!(data.token && (data.token.must_change_password || data.token.password_expired));
     if (must || forceMode) {
       forceMode = true;
@@ -101,7 +111,44 @@
   }
 
   $("btnMe").onclick = async () => {
-    try { await refreshMe(); } catch (e) { $("outProfile").textContent = e.message; }
+    try { await refreshMe(); setMsg($("profileMsg"), "已刷新", true); }
+    catch (e) { setMsg($("profileMsg"), e.message, false); }
+  };
+
+  $("btnSaveProfile").onclick = async () => {
+    try {
+      const body = {
+        display_name: $("profileDisplayName").value.trim(),
+        avatar: $("profileAvatar").value.trim(),
+      };
+      const user = await api("/api/v1/auth/me", { method: "PATCH", body: JSON.stringify(body) });
+      $("profileUserId").value = user.user_id || "";
+      $("profileDisplayName").value = user.display_name || "";
+      $("profileAvatar").value = user.avatar || "";
+      setMsg($("profileMsg"), "资料已保存", true);
+      refreshMe().catch(() => {});
+    } catch (e) { setMsg($("profileMsg"), e.message, false); }
+  };
+
+  async function loadPreferences() {
+    const prefs = await api("/api/v1/auth/preferences");
+    $("prefNotifyEmail").checked = !!prefs.notify_login_email;
+    $("prefNotifySMS").checked = !!prefs.notify_login_sms;
+    return prefs;
+  }
+
+  $("btnSavePrefs").onclick = async () => {
+    try {
+      await api("/api/v1/auth/preferences", {
+        method: "PATCH",
+        body: JSON.stringify({
+          notify_login_email: $("prefNotifyEmail").checked,
+          notify_login_sms: $("prefNotifySMS").checked,
+        }),
+      });
+      setMsg($("prefMsg"), "偏好已保存", true);
+      refreshMe().catch(() => {});
+    } catch (e) { setMsg($("prefMsg"), e.message, false); }
   };
 
   $("btnForcePwd").onclick = async () => {
@@ -340,8 +387,49 @@
     try { await loadNotify(); } catch (e) { $("notifyList").textContent = e.message; }
   };
 
+  let mergeChallengeId = "";
+  $("btnMergeChallenge").onclick = async () => {
+    try {
+      const data = await api("/api/v1/auth/challenge", {
+        method: "POST",
+        body: JSON.stringify({
+          method: $("mergeMethod").value,
+          identity: $("mergeIdentity").value.trim(),
+          scene: "merge",
+        }),
+      });
+      mergeChallengeId = data.challenge_id || "";
+      setMsg($("mergeMsg"), "验证码已发送", true);
+    } catch (e) { setMsg($("mergeMsg"), e.message, false); }
+  };
+  $("btnMergeStart").onclick = async () => {
+    try {
+      const data = await api("/api/v1/auth/merge/start", {
+        method: "POST",
+        body: JSON.stringify({
+          method: $("mergeMethod").value,
+          identity: $("mergeIdentity").value.trim(),
+          credential: { challenge_id: mergeChallengeId, otp: $("mergeOTP").value.trim() },
+        }),
+      });
+      $("mergeToken").value = data.merge_token || data.token || "";
+      setMsg($("mergeMsg"), "已获取 merge_token，请确认合并", true);
+    } catch (e) { setMsg($("mergeMsg"), e.message, false); }
+  };
+  $("btnMergeConfirm").onclick = async () => {
+    try {
+      await api("/api/v1/auth/merge/confirm", {
+        method: "POST",
+        body: JSON.stringify({ merge_token: $("mergeToken").value.trim() }),
+      });
+      setMsg($("mergeMsg"), "合并成功", true);
+      refreshMe();
+    } catch (e) { setMsg($("mergeMsg"), e.message, false); }
+  };
+
   if ($("token").value.trim()) {
-    refreshMe().catch((e) => { $("outProfile").textContent = e.message; });
+    refreshMe().catch((e) => { setMsg($("profileMsg"), e.message, false); });
+    loadPreferences().catch(() => {});
   } else if (forceMode) {
     $("forcePwd").classList.remove("hidden");
   }

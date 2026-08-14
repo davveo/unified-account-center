@@ -66,6 +66,7 @@ password:
   min_length: 8
   require_letter_number: true
   max_age_days: 0        # 密码最长有效期；>0 时登录返回 password_expired / must_change_password
+  history_count: 5       # 禁止重复使用最近 N 次密码；0=禁用
   notify_login_email: false # 新设备登录邮件提醒
   notify_login_sms: false   # 新设备登录短信提醒（站内通知始终写入）
 

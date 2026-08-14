@@ -30,14 +30,16 @@ const (
 )
 
 type User struct {
-	ID          uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
-	UserID      string    `gorm:"size:64;uniqueIndex;not null" json:"user_id"`
-	TenantID    string    `gorm:"size:64;index;not null;default:default" json:"tenant_id"`
-	DisplayName string    `gorm:"size:128" json:"display_name"`
-	Avatar      string    `gorm:"size:512" json:"avatar"`
-	Status      string    `gorm:"size:32;not null;default:active" json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
+	UserID          string    `gorm:"size:64;uniqueIndex;not null" json:"user_id"`
+	TenantID        string    `gorm:"size:64;index;not null;default:default" json:"tenant_id"`
+	DisplayName     string    `gorm:"size:128" json:"display_name"`
+	Avatar          string    `gorm:"size:512" json:"avatar"`
+	Status          string    `gorm:"size:32;not null;default:active" json:"status"`
+	PrefNotifyEmail bool      `gorm:"not null;default:true" json:"pref_notify_email"`
+	PrefNotifySMS   bool      `gorm:"not null;default:true" json:"pref_notify_sms"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 func (User) TableName() string { return "users" }
@@ -69,6 +71,16 @@ type Credential struct {
 }
 
 func (Credential) TableName() string { return "credentials" }
+
+// PasswordHistory 密码历史哈希，用于禁止重复使用最近 N 次密码。
+type PasswordHistory struct {
+	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"-"`
+	UserID       string    `gorm:"size:64;index;not null" json:"user_id"`
+	PasswordHash string    `gorm:"size:255;not null" json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (PasswordHistory) TableName() string { return "password_histories" }
 
 // WebAuthnCredential Passkey 凭证。
 type WebAuthnCredential struct {
@@ -179,6 +191,8 @@ type App struct {
 	ThemeColor       string     `gorm:"size:32" json:"theme_color"`
 	AccessTTL        int64      `gorm:"not null;default:7200" json:"access_ttl"`
 	RefreshTTL       int64      `gorm:"not null;default:2592000" json:"refresh_ttl"`
+	RequireMFA       bool       `gorm:"not null;default:false" json:"require_mfa"`             // 应用级强制 MFA
+	PasswordMaxAgeDays int      `gorm:"not null;default:0" json:"password_max_age_days"`       // 0=跟随全局
 	Status           string     `gorm:"size:32;not null;default:active" json:"status"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`

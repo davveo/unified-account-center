@@ -120,6 +120,49 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	response.OK(c, res)
 }
 
+func (h *AuthHandler) UpdateMe(c *gin.Context) {
+	var dto service.UpdateProfileDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	res, err := h.auth.UpdateProfile(c.Request.Context(), uid, dto)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) GetPreferences(c *gin.Context) {
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	res, err := h.auth.GetPreferences(c.Request.Context(), uid)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) UpdatePreferences(c *gin.Context) {
+	var dto service.UpdatePreferencesDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	userID, _ := c.Get(middleware.CtxUserID)
+	uid, _ := userID.(string)
+	res, err := h.auth.UpdatePreferences(c.Request.Context(), uid, dto)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
 func (h *AuthHandler) UserInfo(c *gin.Context) {
 	userID, _ := c.Get(middleware.CtxUserID)
 	uid, _ := userID.(string)
@@ -277,6 +320,25 @@ func (h *AuthHandler) TokenCheck(c *gin.Context) {
 	h.Introspect(c)
 }
 
+func (h *AuthHandler) RevokeToken(c *gin.Context) {
+	token := c.PostForm("token")
+	tokenTypeHint := c.PostForm("token_type_hint")
+	if token == "" {
+		var body struct {
+			Token         string `json:"token"`
+			TokenTypeHint string `json:"token_type_hint"`
+		}
+		_ = c.ShouldBindJSON(&body)
+		token = body.Token
+		tokenTypeHint = body.TokenTypeHint
+	}
+	if err := h.auth.RevokeToken(c.Request.Context(), token, tokenTypeHint); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	c.Status(200)
+}
+
 func (h *AuthHandler) ListNotifications(c *gin.Context) {
 	uid, _ := c.Get(middleware.CtxUserID)
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -352,6 +414,7 @@ func (h *AuthHandler) IssueHostedCode(c *gin.Context) {
 		CodeChallenge   string `json:"code_challenge"`
 		AccessToken     string `json:"access_token" binding:"required"`
 		RefreshToken    string `json:"refresh_token" binding:"required"`
+		IDToken         string `json:"id_token"`
 		ExpireIn        int64  `json:"expire_in"`
 		RefreshExpireIn int64  `json:"refresh_expire_in"`
 		DeviceID        string `json:"device_id"`
@@ -367,6 +430,7 @@ func (h *AuthHandler) IssueHostedCode(c *gin.Context) {
 		AccessToken: body.AccessToken, TokenType: "Bearer",
 		ExpireIn: body.ExpireIn, RefreshToken: body.RefreshToken,
 		RefreshExpireIn: body.RefreshExpireIn, DeviceID: body.DeviceID, RefreshJTI: body.RefreshJTI,
+		IDToken: body.IDToken,
 	}
 	res, err := h.auth.IssueHostedCode(c.Request.Context(), h.meta(c), uid, tok, body.DeviceID, service.IssueHostedCodeDTO{
 		RedirectURI: body.RedirectURI, State: body.State, CodeChallenge: body.CodeChallenge,
@@ -658,4 +722,21 @@ func (h *AuthHandler) SAMLACS(c *gin.Context) {
 		return
 	}
 	response.OK(c, res)
+}
+
+func (h *AuthHandler) SAMLMetadata(c *gin.Context) {
+	c.Header("Content-Type", "application/samlmetadata+xml")
+	c.String(200, h.auth.SAMLMetadata())
+}
+
+func (h *AuthHandler) SAMLSLO(c *gin.Context) {
+	req := c.PostForm("SAMLRequest")
+	if req == "" {
+		req = c.Query("SAMLRequest")
+	}
+	if err := h.auth.FinishSAMLSLO(c.Request.Context(), h.meta(c), req); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
 }

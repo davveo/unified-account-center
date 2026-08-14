@@ -41,14 +41,25 @@
       <button type="button" class="tab" data-tab="passkey">Passkey</button>
       <button type="button" class="tab" data-tab="sessions">会话</button>
       <button type="button" class="tab" data-tab="notify">通知</button>
+      <button type="button" class="tab" data-tab="merge">合并账号</button>
     </nav>
 
     <section class="panel tab-panel active" data-panel="profile">
       <h2>账户资料</h2>
-      <div class="actions">
-        <button id="btnMe" type="button">刷新资料</button>
+      <div class="profile-form">
+        <label>用户 ID <input id="profileUserId" readonly /></label>
+        <label>显示名称 <input id="profileDisplayName" placeholder="昵称" /></label>
+        <label>头像 URL <input id="profileAvatar" placeholder="https://..." /></label>
       </div>
-      <pre id="outProfile">等待加载…</pre>
+      <div class="actions">
+        <button id="btnMe" type="button" class="ghost">刷新资料</button>
+        <button id="btnSaveProfile" type="button">保存资料</button>
+      </div>
+      <p id="profileMsg" class="msg"></p>
+      <details class="profile-raw">
+        <summary>完整响应</summary>
+        <pre id="outProfile">等待加载…</pre>
+      </details>
     </section>
 
     <section class="panel tab-panel" data-panel="password">
@@ -129,11 +140,45 @@
     </section>
 
     <section class="panel tab-panel" data-panel="notify">
-      <h2>站内通知</h2>
+      <h2>通知偏好</h2>
+      <p class="hint">关闭后即使平台开启也不会向您发送对应渠道的新设备登录提醒（站内通知始终保留）。</p>
+      <label class="toggle-row">
+        <input id="prefNotifyEmail" type="checkbox" checked />
+        新设备登录邮件提醒
+      </label>
+      <label class="toggle-row">
+        <input id="prefNotifySMS" type="checkbox" checked />
+        新设备登录短信提醒
+      </label>
+      <div class="actions">
+        <button id="btnSavePrefs" type="button">保存偏好</button>
+      </div>
+      <p id="prefMsg" class="msg"></p>
+      <h3>站内通知</h3>
       <div class="actions">
         <button id="btnNotify" type="button" class="ghost">刷新</button>
       </div>
       <div id="notifyList" class="list">—</div>
+    </section>
+
+    <section class="panel tab-panel" data-panel="merge">
+      <h2>合并冲突账号</h2>
+      <p class="hint">绑定身份冲突时，可验证对方身份后合并到当前账号。</p>
+      <label>对方方式
+        <select id="mergeMethod">
+          <option value="phone_otp">手机 OTP</option>
+          <option value="email_otp">邮箱 OTP</option>
+        </select>
+      </label>
+      <label>对方身份 <input id="mergeIdentity" /></label>
+      <label>验证码 <input id="mergeOTP" /></label>
+      <div class="actions">
+        <button id="btnMergeChallenge" type="button" class="ghost">发验证码</button>
+        <button id="btnMergeStart" type="button">开始合并</button>
+        <button id="btnMergeConfirm" type="button" class="ghost">确认合并</button>
+      </div>
+      <label>merge_token <input id="mergeToken" readonly /></label>
+      <p id="mergeMsg" class="msg"></p>
     </section>
   </main>
   <script src="/account/static/app.js"></script>

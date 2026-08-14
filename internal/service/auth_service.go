@@ -89,6 +89,7 @@ type TokenDTO struct {
 	ExpireIn           int64  `json:"expire_in"`
 	RefreshToken       string `json:"refresh_token"`
 	RefreshExpireIn    int64  `json:"refresh_expire_in"`
+	IDToken            string `json:"id_token,omitempty"`
 	DeviceID           string `json:"device_id,omitempty"`
 	RefreshJTI         string `json:"refresh_jti,omitempty"`
 	PasswordExpired    bool   `json:"password_expired,omitempty"`
@@ -103,12 +104,16 @@ type IdentityView struct {
 }
 
 type UserView struct {
-	UserID      string   `json:"user_id"`
-	TenantID    string   `json:"tenant_id,omitempty"`
-	DisplayName string   `json:"display_name"`
-	Avatar      string   `json:"avatar"`
-	Status      string   `json:"status"`
-	Roles       []string `json:"roles,omitempty"`
+	UserID          string   `json:"user_id"`
+	TenantID        string   `json:"tenant_id,omitempty"`
+	DisplayName     string   `json:"display_name"`
+	Avatar          string   `json:"avatar"`
+	Status          string   `json:"status"`
+	Roles           []string `json:"roles,omitempty"`
+	CreatedAt       string   `json:"created_at,omitempty"`
+	UpdatedAt       string   `json:"updated_at,omitempty"`
+	PrefNotifyEmail bool     `json:"pref_notify_email"`
+	PrefNotifySMS   bool     `json:"pref_notify_sms"`
 }
 
 type LoginResult struct {
@@ -132,6 +137,8 @@ func userViewOf(u *model.User, roles []string) UserView {
 	return UserView{
 		UserID: u.UserID, TenantID: u.TenantID, DisplayName: u.DisplayName,
 		Avatar: u.Avatar, Status: u.Status, Roles: append([]string{}, roles...),
+		CreatedAt: u.CreatedAt.Format(time.RFC3339), UpdatedAt: u.UpdatedAt.Format(time.RFC3339),
+		PrefNotifyEmail: u.PrefNotifyEmail, PrefNotifySMS: u.PrefNotifySMS,
 	}
 }
 
@@ -281,6 +288,11 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	}
 
 	needMFA := s.userHasMFA(ctx, user.UserID)
+	if app.RequireMFA && !needMFA {
+		observability.IncLogin(false)
+		s.audit(ctx, app, user.UserID, "login_fail", false, "mfa_required_by_app", meta)
+		return nil, errcode.New(errcode.ForbiddenApp, "应用要求先启用 MFA")
+	}
 	if needMFA || (newDevice && s.cfg.Risk.RequireMFAOnNewDevice && needMFA) {
 		mfaToken, methods, err := s.createMFAPending(ctx, app, user, dto.Client, isNew)
 		if err != nil {
@@ -413,6 +425,30 @@ func (s *AuthService) Logout(ctx context.Context, meta RequestMeta, userID, acce
 	return nil
 }
 
+// RevokeToken RFC 7009 风格吊销：access_token 写入 jti 黑名单，refresh_token 标记 revoked。
+func (s *AuthService) RevokeToken(ctx context.Context, token, tokenTypeHint string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	tryRefresh := tokenTypeHint == "refresh_token"
+	if !tryRefresh {
+		if claims, err := s.jwt.ParseAccess(token); err == nil {
+			if claims.ExpiresAt != nil {
+				ttl := time.Until(claims.ExpiresAt.Time)
+				if ttl > 0 {
+					_ = s.redis.BlacklistAccess(ctx, claims.ID, ttl)
+				}
+			}
+			return nil
+		}
+	}
+	if rt, _ := s.repos.Refresh.FindByHash(ctx, crypto.HashToken(token)); rt != nil {
+		_ = s.repos.Refresh.Revoke(ctx, rt.JTI, time.Now())
+	}
+	return nil
+}
+
 func (s *AuthService) Me(ctx context.Context, userID string) (*LoginResult, error) {
 	user, err := s.repos.User.FindByUserID(ctx, userID)
 	if err != nil || user == nil {
@@ -420,7 +456,7 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*LoginResult, erro
 	}
 	views, _ := s.identityViews(ctx, userID)
 	roles, _ := s.rolesForUser(ctx, userID, user.TenantID)
-	expired, must := s.passwordExpiryFlags(ctx, userID)
+	expired, must := s.passwordExpiryFlags(ctx, userID, 0)
 	return &LoginResult{
 		User:       userViewOf(user, roles),
 		Identities: views,
@@ -429,6 +465,41 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*LoginResult, erro
 			MustChangePassword: expired || must,
 		},
 	}, nil
+}
+
+type UpdateProfileDTO struct {
+	DisplayName *string `json:"display_name"`
+	Avatar      *string `json:"avatar"`
+}
+
+func (s *AuthService) UpdateProfile(ctx context.Context, userID string, dto UpdateProfileDTO) (*UserView, error) {
+	if dto.DisplayName == nil && dto.Avatar == nil {
+		return nil, errcode.New(errcode.BadRequest, "至少提供一个字段")
+	}
+	user, err := s.repos.User.FindByUserID(ctx, userID)
+	if err != nil || user == nil {
+		return nil, errcode.New(errcode.NotFound, "用户不存在")
+	}
+	if dto.DisplayName != nil {
+		name := strings.TrimSpace(*dto.DisplayName)
+		if len(name) > 128 {
+			return nil, errcode.New(errcode.BadRequest, "显示名称过长")
+		}
+		user.DisplayName = name
+	}
+	if dto.Avatar != nil {
+		avatar := strings.TrimSpace(*dto.Avatar)
+		if len(avatar) > 512 {
+			return nil, errcode.New(errcode.BadRequest, "头像 URL 过长")
+		}
+		user.Avatar = avatar
+	}
+	if err := s.repos.User.Update(ctx, user); err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "更新资料失败", err)
+	}
+	roles, _ := s.rolesForUser(ctx, userID, user.TenantID)
+	view := userViewOf(user, roles)
+	return &view, nil
 }
 
 func (s *AuthService) Introspect(ctx context.Context, token string) (map[string]interface{}, error) {
@@ -639,7 +710,7 @@ func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID 
 	if err != nil {
 		return err
 	}
-	expired, must := s.passwordExpiryFlags(ctx, userID)
+	expired, must := s.passwordExpiryFlags(ctx, userID, app.PasswordMaxAgeDays)
 	forceChange := expired || must
 	if !forceChange {
 		if err := s.consumeStepUp(ctx, userID, app.ClientID, dto.StepUpToken); err != nil {
@@ -649,12 +720,23 @@ func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID 
 	if err := s.validatePassword(dto.Password); err != nil {
 		return err
 	}
+	cred, _ := s.repos.Credential.FindByUserID(ctx, userID)
+	oldHash := ""
+	if cred != nil {
+		oldHash = cred.PasswordHash
+	}
+	if err := s.assertPasswordNotReused(ctx, userID, dto.Password, oldHash); err != nil {
+		return err
+	}
 	hash, err := crypto.HashPassword(dto.Password)
 	if err != nil {
 		return errcode.Wrap(errcode.Internal, "密码哈希失败", err)
 	}
 	if err := s.repos.Credential.UpsertPassword(ctx, userID, hash); err != nil {
 		return errcode.Wrap(errcode.Internal, "保存密码失败", err)
+	}
+	if err := s.recordPasswordHistory(ctx, userID, oldHash); err != nil {
+		return errcode.Wrap(errcode.Internal, "保存密码历史失败", err)
 	}
 	_ = s.repos.Refresh.RevokeAllByUser(ctx, userID, app.ClientID, time.Now())
 	if forceChange && s.redis != nil {
@@ -731,12 +813,23 @@ func (s *AuthService) ResetPasswordConfirm(ctx context.Context, meta RequestMeta
 	if err := s.validatePassword(dto.Password); err != nil {
 		return err
 	}
+	cred, _ := s.repos.Credential.FindByUserID(ctx, idn.UserID)
+	oldHash := ""
+	if cred != nil {
+		oldHash = cred.PasswordHash
+	}
+	if err := s.assertPasswordNotReused(ctx, idn.UserID, dto.Password, oldHash); err != nil {
+		return err
+	}
 	hash, err := crypto.HashPassword(dto.Password)
 	if err != nil {
 		return errcode.Wrap(errcode.Internal, "密码哈希失败", err)
 	}
 	if err := s.repos.Credential.UpsertPassword(ctx, idn.UserID, hash); err != nil {
 		return errcode.Wrap(errcode.Internal, "保存密码失败", err)
+	}
+	if err := s.recordPasswordHistory(ctx, idn.UserID, oldHash); err != nil {
+		return errcode.Wrap(errcode.Internal, "保存密码历史失败", err)
 	}
 	_ = s.repos.Refresh.RevokeAllByUser(ctx, idn.UserID, app.ClientID, time.Now())
 	s.audit(ctx, app, idn.UserID, "password_reset", true, "", meta)
@@ -929,7 +1022,7 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 	}
 
 	roles, scope := s.rolesForUser(ctx, user.UserID, app.TenantID)
-	mcp, must := s.passwordExpiryFlags(ctx, user.UserID)
+	mcp, must := s.passwordExpiryFlags(ctx, user.UserID, app.PasswordMaxAgeDays)
 	uv, _ := s.redis.GetUserVersion(ctx, user.UserID)
 	access, accessJTI, _, err := s.jwt.IssueAccess(user.UserID, app.ClientID, app.TenantID, accessTTL, roles, scope,
 		jwtutil.WithMustChangePassword(mcp || must),
@@ -937,6 +1030,12 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "签发 access_token 失败", err)
+	}
+	idToken, _, _, err := s.jwt.IssueIDToken(user.UserID, app.ClientID, app.TenantID, accessTTL,
+		jwtutil.WithAuthTime(time.Now()),
+	)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "签发 id_token 失败", err)
 	}
 	rtPlain := idgen.New("rt") + idgen.RandomHex(16)
 	jti := idgen.New("rj")
@@ -965,6 +1064,7 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 		ExpireIn:           int64(accessTTL.Seconds()),
 		RefreshToken:       rtPlain,
 		RefreshExpireIn:    int64(refreshTTL.Seconds()),
+		IDToken:            idToken,
 		DeviceID:           client.DeviceID,
 		RefreshJTI:         jti,
 		PasswordExpired:    mcp,
@@ -973,10 +1073,13 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 	return tok, nil
 }
 
-func (s *AuthService) passwordExpiryFlags(ctx context.Context, userID string) (expired, mustChange bool) {
+func (s *AuthService) passwordExpiryFlags(ctx context.Context, userID string, appMaxAge int) (expired, mustChange bool) {
 	days := 0
 	if s.cfg != nil {
 		days = s.cfg.Password.MaxAgeDays
+	}
+	if appMaxAge > 0 {
+		days = appMaxAge
 	}
 	if days <= 0 {
 		return false, false
@@ -1011,7 +1114,7 @@ func (s *AuthService) notifyNewDeviceLogin(ctx context.Context, user *model.User
 		UserID: user.UserID, Kind: "login_new_device", Title: subject, Body: body, CreatedAt: time.Now(),
 	}).Error
 
-	if s.cfg.Password.NotifyLoginEmail && s.mailer != nil {
+	if s.cfg.Password.NotifyLoginEmail && user.PrefNotifyEmail && s.mailer != nil {
 		for _, id := range ids {
 			if id.Type == model.IdentityEmail && id.Identifier != "" {
 				_ = s.mailer.SendMail(ctx, id.Identifier, subject, body)
@@ -1019,7 +1122,7 @@ func (s *AuthService) notifyNewDeviceLogin(ctx context.Context, user *model.User
 			}
 		}
 	}
-	if s.cfg.Password.NotifyLoginSMS && s.sms != nil {
+	if s.cfg.Password.NotifyLoginSMS && user.PrefNotifySMS && s.sms != nil {
 		for _, id := range ids {
 			if id.Type == model.IdentityPhone && id.Identifier != "" {
 				_ = s.sms.SendText(ctx, id.Identifier, subject+" "+meta.IP)
@@ -1048,6 +1151,45 @@ func (s *AuthService) identityViews(ctx context.Context, userID string) ([]Ident
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+func (s *AuthService) assertPasswordNotReused(ctx context.Context, userID, newPassword, currentHash string) error {
+	n := s.cfg.Password.HistoryCount
+	if n <= 0 {
+		return nil
+	}
+	hashes := make([]string, 0, n+1)
+	if currentHash != "" {
+		hashes = append(hashes, currentHash)
+	}
+	hist, err := s.repos.PasswordHistory.ListRecent(ctx, userID, n)
+	if err != nil {
+		return errcode.Wrap(errcode.Internal, "查询密码历史失败", err)
+	}
+	for _, h := range hist {
+		hashes = append(hashes, h.PasswordHash)
+	}
+	for _, h := range hashes {
+		ok, err := crypto.VerifyPassword(h, newPassword)
+		if err != nil {
+			continue
+		}
+		if ok {
+			return errcode.New(errcode.BadRequest, "不能使用最近使用过的密码")
+		}
+	}
+	return nil
+}
+
+func (s *AuthService) recordPasswordHistory(ctx context.Context, userID, oldHash string) error {
+	n := s.cfg.Password.HistoryCount
+	if n <= 0 || oldHash == "" {
+		return nil
+	}
+	if err := s.repos.PasswordHistory.Append(ctx, userID, oldHash); err != nil {
+		return err
+	}
+	return s.repos.PasswordHistory.Trim(ctx, userID, n)
 }
 
 func (s *AuthService) validatePassword(pwd string) error {

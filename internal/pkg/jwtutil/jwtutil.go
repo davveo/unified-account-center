@@ -29,6 +29,14 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// IDTokenClaims OIDC id_token（标准 iss/sub/aud/exp/iat + 可选 auth_time、uid/tid）。
+type IDTokenClaims struct {
+	UserID   string `json:"uid,omitempty"`
+	TenantID string `json:"tid,omitempty"`
+	AuthTime *jwt.NumericDate `json:"auth_time,omitempty"`
+	jwt.RegisteredClaims
+}
+
 type JWK struct {
 	Kty string `json:"kty"`
 	Kid string `json:"kid"`
@@ -319,6 +327,30 @@ func WithUserVersion(v int64) AccessOption {
 	return func(c *Claims) { c.UserVersion = v }
 }
 
+// IDTokenOption 签发 id_token 可选参数。
+type IDTokenOption func(*IDTokenClaims)
+
+func WithAuthTime(t time.Time) IDTokenOption {
+	return func(c *IDTokenClaims) {
+		c.AuthTime = jwt.NewNumericDate(t)
+	}
+}
+
+func (m *Manager) signClaims(claims jwt.Claims) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.alg == "RS256" {
+		if m.privateKey == nil {
+			return "", fmt.Errorf("rsa private key missing")
+		}
+		t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		t.Header["kid"] = m.kid
+		return t.SignedString(m.privateKey)
+	}
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return t.SignedString(m.secret)
+}
+
 func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Duration, roles []string, scope string, opts ...AccessOption) (token string, jti string, exp time.Time, err error) {
 	jti = idgen.New("at")
 	exp = time.Now().Add(ttl)
@@ -345,20 +377,33 @@ func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Durati
 			opt(&claims)
 		}
 	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	var t *jwt.Token
-	if m.alg == "RS256" {
-		if m.privateKey == nil {
-			return "", "", time.Time{}, fmt.Errorf("rsa private key missing")
-		}
-		t = jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-		t.Header["kid"] = m.kid
-		signed, err := t.SignedString(m.privateKey)
-		return signed, jti, exp, err
+	signed, err := m.signClaims(claims)
+	return signed, jti, exp, err
+}
+
+// IssueIDToken 签发 OIDC id_token，复用与 access_token 相同的签名钥与 kid。
+func (m *Manager) IssueIDToken(userID, clientID, tenantID string, ttl time.Duration, opts ...IDTokenOption) (token string, jti string, exp time.Time, err error) {
+	jti = idgen.New("id")
+	now := time.Now()
+	exp = now.Add(ttl)
+	claims := IDTokenClaims{
+		UserID:   userID,
+		TenantID: tenantID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.issuer,
+			Subject:   userID,
+			Audience:  jwt.ClaimStrings{clientID},
+			ExpiresAt: jwt.NewNumericDate(exp),
+			IssuedAt:  jwt.NewNumericDate(now),
+			ID:        jti,
+		},
 	}
-	t = jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := t.SignedString(m.secret)
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&claims)
+		}
+	}
+	signed, err := m.signClaims(claims)
 	return signed, jti, exp, err
 }
 
@@ -384,6 +429,32 @@ func (m *Manager) ParseAccess(tokenStr string) (*Claims, error) {
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
+	}
+	return claims, nil
+}
+
+func (m *Manager) ParseIDToken(tokenStr string) (*IDTokenClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &IDTokenClaims{}, func(t *jwt.Token) (interface{}, error) {
+		switch t.Method.(type) {
+		case *jwt.SigningMethodRSA:
+			return m.keyFuncRSA(t)
+		case *jwt.SigningMethodHMAC:
+			m.mu.RLock()
+			defer m.mu.RUnlock()
+			if len(m.secret) == 0 {
+				return nil, fmt.Errorf("hmac secret missing")
+			}
+			return m.secret, nil
+		default:
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(*IDTokenClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid id_token")
 	}
 	return claims, nil
 }

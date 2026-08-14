@@ -55,6 +55,14 @@ func (h *AdminHandler) CreateApp(c *gin.Context) {
 		response.Fail(c, errcode.BadRequest, "参数错误")
 		return
 	}
+	if tid, platform := middleware.AdminTenantFilter(c, req.TenantID); !platform {
+		req.TenantID = tid
+	} else if req.TenantID == "" {
+		req.TenantID = tid
+		if req.TenantID == "" {
+			req.TenantID = "default"
+		}
+	}
 	res, err := h.admin.CreateApp(c.Request.Context(), req)
 	if err != nil {
 		response.FailErr(c, err)
@@ -66,7 +74,8 @@ func (h *AdminHandler) CreateApp(c *gin.Context) {
 func (h *AdminHandler) ListApps(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	list, total, err := h.admin.ListApps(c.Request.Context(), c.Query("tenant_id"), limit, offset)
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
+	list, total, err := h.admin.ListApps(c.Request.Context(), tenantID, limit, offset)
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -131,7 +140,8 @@ func (h *AdminHandler) ListChannels(c *gin.Context) {
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	list, total, err := h.admin.ListUsers(c.Request.Context(), c.Query("tenant_id"), c.Query("q"), limit, offset)
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
+	list, total, err := h.admin.ListUsers(c.Request.Context(), tenantID, c.Query("q"), limit, offset)
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -170,8 +180,9 @@ func (h *AdminHandler) ForceLogout(c *gin.Context) {
 func (h *AdminHandler) ListAudits(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
 	filter := repository.AuditFilter{
-		TenantID:  c.Query("tenant_id"),
+		TenantID:  tenantID,
 		ClientID:  c.Query("client_id"),
 		UserID:    c.Query("user_id"),
 		Action:    c.Query("action"),
@@ -302,6 +313,16 @@ func (h *AdminHandler) ListTenants(c *gin.Context) {
 		response.FailErr(c, err)
 		return
 	}
+	if tid, platform := middleware.AdminTenantFilter(c, ""); !platform {
+		filtered := make([]service.TenantView, 0, 1)
+		for _, t := range list {
+			if t.TenantID == tid {
+				filtered = append(filtered, t)
+			}
+		}
+		response.OK(c, gin.H{"items": filtered, "total": int64(len(filtered))})
+		return
+	}
 	response.OK(c, gin.H{"items": list, "total": total})
 }
 
@@ -343,7 +364,8 @@ func (h *AdminHandler) UpsertIdP(c *gin.Context) {
 }
 
 func (h *AdminHandler) ListIdPs(c *gin.Context) {
-	list, err := h.admin.ListEnterpriseIdPs(c.Request.Context(), c.Query("tenant_id"))
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
+	list, err := h.admin.ListEnterpriseIdPs(c.Request.Context(), tenantID)
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -366,7 +388,10 @@ func (h *AdminHandler) CreateInvite(c *gin.Context) {
 		response.Fail(c, errcode.BadRequest, "参数错误")
 		return
 	}
-	req.CreatedBy = c.GetHeader("X-Admin-Actor")
+	if tid, platform := middleware.AdminTenantFilter(c, req.TenantID); !platform {
+		req.TenantID = tid
+	}
+	req.CreatedBy = adminActor(c)
 	res, err := h.admin.CreateInvite(c.Request.Context(), req)
 	if err != nil {
 		response.FailErr(c, err)
@@ -378,7 +403,8 @@ func (h *AdminHandler) CreateInvite(c *gin.Context) {
 func (h *AdminHandler) ListInvites(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	list, total, err := h.admin.ListInvites(c.Request.Context(), c.Query("tenant_id"), limit, offset)
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
+	list, total, err := h.admin.ListInvites(c.Request.Context(), tenantID, limit, offset)
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -400,6 +426,9 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 		response.Fail(c, errcode.BadRequest, "参数错误")
 		return
 	}
+	if tid, platform := middleware.AdminTenantFilter(c, req.TenantID); !platform {
+		req.TenantID = tid
+	}
 	res, err := h.admin.AdminCreateUser(c.Request.Context(), req)
 	if err != nil {
 		response.FailErr(c, err)
@@ -411,7 +440,8 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 func (h *AdminHandler) ListJoinRequests(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	list, total, err := h.admin.ListJoinRequests(c.Request.Context(), c.Query("tenant_id"), c.DefaultQuery("status", "pending"), limit, offset)
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
+	list, total, err := h.admin.ListJoinRequests(c.Request.Context(), tenantID, c.DefaultQuery("status", "pending"), limit, offset)
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -468,7 +498,8 @@ func (h *AdminHandler) RevokeRole(c *gin.Context) {
 func (h *AdminHandler) ListRoles(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	list, total, err := h.admin.ListRoles(c.Request.Context(), c.Query("tenant_id"), limit, offset)
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
+	list, total, err := h.admin.ListRoles(c.Request.Context(), tenantID, limit, offset)
 	if err != nil {
 		response.FailErr(c, err)
 		return
@@ -477,7 +508,7 @@ func (h *AdminHandler) ListRoles(c *gin.Context) {
 }
 
 func (h *AdminHandler) Dashboard(c *gin.Context) {
-	tenantID := c.Query("tenant_id")
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
 	if tenantID == "" {
 		tenantID = "default"
 	}
@@ -490,8 +521,9 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 }
 
 func (h *AdminHandler) ExportAudits(c *gin.Context) {
+	tenantID, _ := middleware.AdminTenantFilter(c, c.Query("tenant_id"))
 	filter := repository.AuditFilter{
-		TenantID: c.Query("tenant_id"),
+		TenantID: tenantID,
 		ClientID: c.Query("client_id"),
 		UserID:   c.Query("user_id"),
 		Action:   c.Query("action"),
@@ -644,4 +676,58 @@ func (h *AdminHandler) ListWebhookDeliveries(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"items": list, "total": total})
+}
+
+func (h *AdminHandler) TestWebhook(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	res, err := h.admin.TestWebhook(c.Request.Context(), id, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) ReplayWebhookDelivery(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	res, err := h.admin.ReplayWebhookDelivery(c.Request.Context(), id, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) ExportUser(c *gin.Context) {
+	res, err := h.admin.ExportUser(c.Request.Context(), c.Param("user_id"))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) AnonymizeUser(c *gin.Context) {
+	if err := h.admin.AnonymizeUser(c.Request.Context(), c.Param("user_id"), adminActor(c)); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AdminHandler) ImportUsers(c *gin.Context) {
+	var req service.ImportUsersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误，需提供 csv 文本或 rows")
+		return
+	}
+	if tid, platform := middleware.AdminTenantFilter(c, req.TenantID); !platform {
+		req.TenantID = tid
+	}
+	res, err := h.admin.ImportUsers(c.Request.Context(), req, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
 }

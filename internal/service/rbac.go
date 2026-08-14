@@ -104,6 +104,7 @@ func (s *AdminService) ListUserRoles(ctx context.Context, userID string) ([]mode
 // HasAdminCapability 判断角色集合是否具备管理能力。
 func HasAdminCapability(roles []string, need string) bool {
 	for _, r := range roles {
+		r = strings.TrimSpace(r)
 		if r == model.RolePlatformAdmin {
 			return true
 		}
@@ -123,4 +124,27 @@ func HasAdminCapability(roles []string, need string) bool {
 		}
 	}
 	return false
+}
+
+// IsPlatformAdmin 是否平台超管（可跨租户）。
+func IsPlatformAdmin(roles []string) bool {
+	for _, r := range roles {
+		if strings.TrimSpace(r) == model.RolePlatformAdmin {
+			return true
+		}
+	}
+	return false
+}
+
+// ParseAdminRoles 从中间件写入的角色字符串解析。
+func ParseAdminRoles(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

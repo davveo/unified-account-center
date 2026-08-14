@@ -137,6 +137,44 @@ func (r *credentialRepo) Ensure(ctx context.Context, userID string) (*model.Cred
 	return c, nil
 }
 
+type passwordHistoryRepo struct{ db *gorm.DB }
+
+func NewPasswordHistoryRepo(db *gorm.DB) PasswordHistoryRepo { return &passwordHistoryRepo{db: db} }
+
+func (r *passwordHistoryRepo) ListRecent(ctx context.Context, userID string, limit int) ([]model.PasswordHistory, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	var list []model.PasswordHistory
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).
+		Order("id desc").Limit(limit).Find(&list).Error
+	return list, err
+}
+
+func (r *passwordHistoryRepo) Append(ctx context.Context, userID, hash string) error {
+	if hash == "" {
+		return nil
+	}
+	return r.db.WithContext(ctx).Create(&model.PasswordHistory{
+		UserID: userID, PasswordHash: hash, CreatedAt: time.Now(),
+	}).Error
+}
+
+func (r *passwordHistoryRepo) Trim(ctx context.Context, userID string, keep int) error {
+	if keep <= 0 {
+		return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&model.PasswordHistory{}).Error
+	}
+	var ids []uint64
+	if err := r.db.WithContext(ctx).Model(&model.PasswordHistory{}).
+		Where("user_id = ?", userID).Order("id desc").Offset(keep).Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.PasswordHistory{}).Error
+}
+
 type webAuthnRepo struct{ db *gorm.DB }
 
 func NewWebAuthnRepo(db *gorm.DB) WebAuthnRepo { return &webAuthnRepo{db: db} }

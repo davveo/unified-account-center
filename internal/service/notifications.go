@@ -47,3 +47,51 @@ func (s *AuthService) MarkNotificationRead(ctx context.Context, userID string, i
 	}
 	return nil
 }
+
+type UserPreferencesView struct {
+	NotifyLoginEmail       bool `json:"notify_login_email"`
+	NotifyLoginSMS         bool `json:"notify_login_sms"`
+	GlobalNotifyLoginEmail bool `json:"global_notify_login_email"`
+	GlobalNotifyLoginSMS   bool `json:"global_notify_login_sms"`
+}
+
+type UpdatePreferencesDTO struct {
+	NotifyLoginEmail *bool `json:"notify_login_email"`
+	NotifyLoginSMS   *bool `json:"notify_login_sms"`
+}
+
+func (s *AuthService) GetPreferences(ctx context.Context, userID string) (*UserPreferencesView, error) {
+	user, err := s.repos.User.FindByUserID(ctx, userID)
+	if err != nil || user == nil {
+		return nil, errcode.New(errcode.NotFound, "用户不存在")
+	}
+	out := &UserPreferencesView{
+		NotifyLoginEmail: user.PrefNotifyEmail,
+		NotifyLoginSMS:   user.PrefNotifySMS,
+	}
+	if s.cfg != nil {
+		out.GlobalNotifyLoginEmail = s.cfg.Password.NotifyLoginEmail
+		out.GlobalNotifyLoginSMS = s.cfg.Password.NotifyLoginSMS
+	}
+	return out, nil
+}
+
+func (s *AuthService) UpdatePreferences(ctx context.Context, userID string, dto UpdatePreferencesDTO) (*UserPreferencesView, error) {
+	if dto.NotifyLoginEmail == nil && dto.NotifyLoginSMS == nil {
+		return nil, errcode.New(errcode.BadRequest, "至少提供一个字段")
+	}
+	user, err := s.repos.User.FindByUserID(ctx, userID)
+	if err != nil || user == nil {
+		return nil, errcode.New(errcode.NotFound, "用户不存在")
+	}
+	if dto.NotifyLoginEmail != nil {
+		user.PrefNotifyEmail = *dto.NotifyLoginEmail
+	}
+	if dto.NotifyLoginSMS != nil {
+		user.PrefNotifySMS = *dto.NotifyLoginSMS
+	}
+	if err := s.repos.User.Update(ctx, user); err != nil {
+		return nil, errcode.Wrap(errcode.Internal, "更新偏好失败", err)
+	}
+	return s.GetPreferences(ctx, userID)
+}
