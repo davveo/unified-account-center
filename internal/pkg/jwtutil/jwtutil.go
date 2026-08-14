@@ -19,11 +19,13 @@ import (
 )
 
 type Claims struct {
-	UserID   string   `json:"uid"`
-	ClientID string   `json:"cid"`
-	TenantID string   `json:"tid"`
-	Roles    []string `json:"roles,omitempty"`
-	Scope    string   `json:"scope,omitempty"`
+	UserID             string   `json:"uid"`
+	ClientID           string   `json:"cid"`
+	TenantID           string   `json:"tid"`
+	Roles              []string `json:"roles,omitempty"`
+	Scope              string   `json:"scope,omitempty"`
+	MustChangePassword bool     `json:"mcp,omitempty"` // 强制改密
+	UserVersion        int64    `json:"uv,omitempty"`  // 强退版本号
 	jwt.RegisteredClaims
 }
 
@@ -306,7 +308,18 @@ func (m *Manager) SnapshotKeys() (currPriv, prevPriv *rsa.PrivateKey, currKid, p
 	return m.privateKey, m.prevPrivate, m.kid, m.prevKid
 }
 
-func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Duration, roles []string, scope string) (token string, jti string, exp time.Time, err error) {
+// AccessOption 签发可选参数。
+type AccessOption func(*Claims)
+
+func WithMustChangePassword(v bool) AccessOption {
+	return func(c *Claims) { c.MustChangePassword = v }
+}
+
+func WithUserVersion(v int64) AccessOption {
+	return func(c *Claims) { c.UserVersion = v }
+}
+
+func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Duration, roles []string, scope string, opts ...AccessOption) (token string, jti string, exp time.Time, err error) {
 	jti = idgen.New("at")
 	exp = time.Now().Add(ttl)
 	if roles == nil {
@@ -326,6 +339,11 @@ func (m *Manager) IssueAccess(userID, clientID, tenantID string, ttl time.Durati
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ID:        jti,
 		},
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&claims)
+		}
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()

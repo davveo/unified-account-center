@@ -32,6 +32,7 @@ type AuthService struct {
 	oauth      *OAuthService
 	webhookBus *webhook.Bus
 	mailer     adapter.Mailer
+	sms        adapter.SMSNotifier
 }
 
 func NewAuthService(cfg *config.Config, repos *repository.Repos, auths *authenticator.Registry, jwtMgr *jwtutil.Manager, redis *redisx.Client) *AuthService {
@@ -45,6 +46,8 @@ func (s *AuthService) SetOAuth(oauth *OAuthService) {
 func (s *AuthService) SetWebhookBus(bus *webhook.Bus) { s.webhookBus = bus }
 
 func (s *AuthService) SetMailer(m adapter.Mailer) { s.mailer = m }
+
+func (s *AuthService) SetSMSNotifier(n adapter.SMSNotifier) { s.sms = n }
 
 func (s *AuthService) emit(eventType, tenantID, clientID, userID string, data map[string]interface{}) {
 	if s.webhookBus == nil {
@@ -297,7 +300,7 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		riskFlags = append(riskFlags, "new_device_no_mfa")
 	}
 
-	token, err := s.issueTokens(ctx, app, user, dto.Client, meta)
+	token, err := s.issueTokens(ctx, app, user, dto.Client, &meta)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +383,7 @@ func (s *AuthService) Refresh(ctx context.Context, meta RequestMeta, refreshToke
 		return nil, errcode.New(errcode.InvalidCred, "refresh_token 已失效")
 	}
 
-	newToken, err := s.issueTokens(ctx, app, user, ClientInfo{DeviceID: rt.DeviceID}, meta)
+	newToken, err := s.issueTokens(ctx, app, user, ClientInfo{DeviceID: rt.DeviceID}, &meta)
 	if err != nil {
 		observability.IncRefresh(false)
 		return nil, err
@@ -417,9 +420,14 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*LoginResult, erro
 	}
 	views, _ := s.identityViews(ctx, userID)
 	roles, _ := s.rolesForUser(ctx, userID, user.TenantID)
+	expired, must := s.passwordExpiryFlags(ctx, userID)
 	return &LoginResult{
 		User:       userViewOf(user, roles),
 		Identities: views,
+		Token: TokenDTO{
+			PasswordExpired:    expired,
+			MustChangePassword: expired || must,
+		},
 	}, nil
 }
 
@@ -435,19 +443,27 @@ func (s *AuthService) Introspect(ctx context.Context, token string) (map[string]
 	if bl {
 		return map[string]interface{}{"active": false}, nil
 	}
+	if ubl, _ := s.redis.IsUserAccessBlacklisted(ctx, claims.UserID); ubl {
+		return map[string]interface{}{"active": false, "reason": "user_revoked"}, nil
+	}
+	if uv, _ := s.redis.GetUserVersion(ctx, claims.UserID); uv > 0 && claims.UserVersion < uv {
+		return map[string]interface{}{"active": false, "reason": "version_stale"}, nil
+	}
 	exp := int64(0)
 	if claims.ExpiresAt != nil {
 		exp = claims.ExpiresAt.Unix()
 	}
 	return map[string]interface{}{
-		"active":    true,
-		"user_id":   claims.UserID,
-		"client_id": claims.ClientID,
-		"tenant_id": claims.TenantID,
-		"roles":     claims.Roles,
-		"scope":     claims.Scope,
-		"exp":       exp,
-		"jti":       claims.ID,
+		"active":               true,
+		"user_id":              claims.UserID,
+		"client_id":            claims.ClientID,
+		"tenant_id":            claims.TenantID,
+		"roles":                claims.Roles,
+		"scope":                claims.Scope,
+		"exp":                  exp,
+		"jti":                  claims.ID,
+		"must_change_password": claims.MustChangePassword,
+		"user_version":         claims.UserVersion,
 	}, nil
 }
 
@@ -623,8 +639,12 @@ func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID 
 	if err != nil {
 		return err
 	}
-	if err := s.consumeStepUp(ctx, userID, app.ClientID, dto.StepUpToken); err != nil {
-		return err
+	expired, must := s.passwordExpiryFlags(ctx, userID)
+	forceChange := expired || must
+	if !forceChange {
+		if err := s.consumeStepUp(ctx, userID, app.ClientID, dto.StepUpToken); err != nil {
+			return err
+		}
 	}
 	if err := s.validatePassword(dto.Password); err != nil {
 		return err
@@ -637,6 +657,10 @@ func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID 
 		return errcode.Wrap(errcode.Internal, "保存密码失败", err)
 	}
 	_ = s.repos.Refresh.RevokeAllByUser(ctx, userID, app.ClientID, time.Now())
+	if forceChange && s.redis != nil {
+		// 失效带 mcp 的旧 access，强制重新登录拿无 mcp 的新 token
+		_, _ = s.redis.BumpUserVersion(ctx, userID)
+	}
 	s.audit(ctx, app, userID, "password_set", true, "", meta)
 	s.emit(model.EventPasswordChanged, app.TenantID, app.ClientID, userID, map[string]interface{}{})
 	return nil
@@ -891,7 +915,10 @@ func defaultDisplay(p *authenticator.IdentityPrincipal) string {
 	}
 }
 
-func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *model.User, client ClientInfo, meta RequestMeta) (*TokenDTO, error) {
+func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *model.User, client ClientInfo, meta *RequestMeta) (*TokenDTO, error) {
+	if meta == nil {
+		meta = &RequestMeta{}
+	}
 	accessTTL := time.Duration(app.AccessTTL) * time.Second
 	if accessTTL <= 0 {
 		accessTTL = s.cfg.JWT.AccessDuration()
@@ -902,7 +929,12 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 	}
 
 	roles, scope := s.rolesForUser(ctx, user.UserID, app.TenantID)
-	access, _, _, err := s.jwt.IssueAccess(user.UserID, app.ClientID, app.TenantID, accessTTL, roles, scope)
+	mcp, must := s.passwordExpiryFlags(ctx, user.UserID)
+	uv, _ := s.redis.GetUserVersion(ctx, user.UserID)
+	access, accessJTI, _, err := s.jwt.IssueAccess(user.UserID, app.ClientID, app.TenantID, accessTTL, roles, scope,
+		jwtutil.WithMustChangePassword(mcp || must),
+		jwtutil.WithUserVersion(uv),
+	)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "签发 access_token 失败", err)
 	}
@@ -925,18 +957,18 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 	if err := s.repos.Refresh.Create(ctx, rt); err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "保存 refresh_token 失败", err)
 	}
+	meta.JTI = accessJTI
+	meta.DeviceID = client.DeviceID
 	tok := &TokenDTO{
-		AccessToken:     access,
-		TokenType:       "Bearer",
-		ExpireIn:        int64(accessTTL.Seconds()),
-		RefreshToken:    rtPlain,
-		RefreshExpireIn: int64(refreshTTL.Seconds()),
-		DeviceID:        client.DeviceID,
-		RefreshJTI:      jti,
-	}
-	if expired, must := s.passwordExpiryFlags(ctx, user.UserID); expired {
-		tok.PasswordExpired = true
-		tok.MustChangePassword = must
+		AccessToken:        access,
+		TokenType:          "Bearer",
+		ExpireIn:           int64(accessTTL.Seconds()),
+		RefreshToken:       rtPlain,
+		RefreshExpireIn:    int64(refreshTTL.Seconds()),
+		DeviceID:           client.DeviceID,
+		RefreshJTI:         jti,
+		PasswordExpired:    mcp,
+		MustChangePassword: mcp || must,
 	}
 	return tok, nil
 }
@@ -967,26 +999,34 @@ func (s *AuthService) passwordExpiryFlags(ctx context.Context, userID string) (e
 }
 
 func (s *AuthService) notifyNewDeviceLogin(ctx context.Context, user *model.User, app *model.App, meta RequestMeta, deviceID string) {
-	if s.cfg == nil || !s.cfg.Password.NotifyLoginEmail || s.mailer == nil {
-		return
-	}
-	ids, err := s.repos.Identity.ListByUserID(ctx, user.UserID)
-	if err != nil {
-		return
-	}
-	var to string
-	for _, id := range ids {
-		if id.Type == model.IdentityEmail && id.Identifier != "" {
-			to = id.Identifier
-			break
-		}
-	}
-	if to == "" {
+	if s.cfg == nil {
 		return
 	}
 	subject := "新设备登录提醒"
 	body := "您的账号在新设备登录。\n应用: " + app.Name + "\nIP: " + meta.IP + "\nUA: " + meta.UA + "\n设备: " + deviceID + "\n"
-	_ = s.mailer.SendMail(ctx, to, subject, body)
+	ids, _ := s.repos.Identity.ListByUserID(ctx, user.UserID)
+
+	// 站内通知始终写入
+	_ = s.repos.DB.WithContext(ctx).Create(&model.UserNotification{
+		UserID: user.UserID, Kind: "login_new_device", Title: subject, Body: body, CreatedAt: time.Now(),
+	}).Error
+
+	if s.cfg.Password.NotifyLoginEmail && s.mailer != nil {
+		for _, id := range ids {
+			if id.Type == model.IdentityEmail && id.Identifier != "" {
+				_ = s.mailer.SendMail(ctx, id.Identifier, subject, body)
+				break
+			}
+		}
+	}
+	if s.cfg.Password.NotifyLoginSMS && s.sms != nil {
+		for _, id := range ids {
+			if id.Type == model.IdentityPhone && id.Identifier != "" {
+				_ = s.sms.SendText(ctx, id.Identifier, subject+" "+meta.IP)
+				break
+			}
+		}
+	}
 }
 
 func (s *AuthService) identityViews(ctx context.Context, userID string) ([]IdentityView, error) {

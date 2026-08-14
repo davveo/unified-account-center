@@ -173,6 +173,8 @@ func NewRouter(d Deps) *gin.Engine {
 		{
 			serverAPI.GET("/introspect", d.AuthHandler.Introspect)
 			serverAPI.POST("/introspect", d.AuthHandler.Introspect)
+			serverAPI.GET("/token-check", d.AuthHandler.TokenCheck)
+			serverAPI.POST("/token-check", d.AuthHandler.TokenCheck)
 			serverAPI.POST("/token", d.AuthHandler.ExchangeToken)
 		}
 
@@ -200,6 +202,8 @@ func NewRouter(d Deps) *gin.Engine {
 			user.DELETE("/passkeys/:id", d.AuthHandler.DeletePasskey)
 			user.POST("/merge/start", d.AuthHandler.MergeStart)
 			user.POST("/merge/confirm", d.AuthHandler.MergeConfirm)
+			user.GET("/notifications", d.AuthHandler.ListNotifications)
+			user.POST("/notifications/:id/read", d.AuthHandler.MarkNotificationRead)
 		}
 
 		// OIDC userinfo：仅需 Bearer（可不带 X-Client-Id）

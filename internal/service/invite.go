@@ -36,6 +36,7 @@ type InviteView struct {
 	Status    string `json:"status"`
 	Note      string `json:"note"`
 	CreatedAt string `json:"created_at"`
+	InviteURL string `json:"invite_url,omitempty"`
 }
 
 func (s *AdminService) CreateInvite(ctx context.Context, req CreateInviteRequest) (*InviteView, error) {
@@ -66,7 +67,24 @@ func (s *AdminService) CreateInvite(ctx context.Context, req CreateInviteRequest
 		return nil, errcode.Wrap(errcode.Internal, "创建邀请失败", err)
 	}
 	v := toInviteView(inv)
+	v.InviteURL = s.inviteMagicLink(inv)
+	if inv.Email != "" && s.mailer != nil {
+		_ = s.mailer.SendMail(ctx, inv.Email, "你收到一个注册邀请",
+			"请点击链接完成注册：\n"+v.InviteURL+"\n\n邀请码："+inv.Code+"\n")
+	}
 	return &v, nil
+}
+
+func (s *AdminService) inviteMagicLink(inv *model.Invite) string {
+	base := "http://127.0.0.1:8080"
+	if s.cfg != nil && s.cfg.Server.PublicBaseURL != "" {
+		base = strings.TrimRight(s.cfg.Server.PublicBaseURL, "/")
+	}
+	cid := inv.ClientID
+	if cid == "" {
+		cid = "app_demo"
+	}
+	return base + "/login?client_id=" + cid + "&invite_code=" + inv.Code + "&hint_email=" + inv.Email
 }
 
 func (s *AdminService) ListInvites(ctx context.Context, tenantID string, limit, offset int) ([]InviteView, int64, error) {
@@ -76,7 +94,9 @@ func (s *AdminService) ListInvites(ctx context.Context, tenantID string, limit, 
 	}
 	out := make([]InviteView, 0, len(list))
 	for i := range list {
-		out = append(out, toInviteView(&list[i]))
+		v := toInviteView(&list[i])
+		v.InviteURL = s.inviteMagicLink(&list[i])
+		out = append(out, v)
 	}
 	return out, total, nil
 }

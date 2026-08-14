@@ -96,9 +96,25 @@ func UserAuth(jwtMgr *jwtutil.Manager, redis *redisx.Client) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if ubl, _ := redis.IsUserAccessBlacklisted(c.Request.Context(), claims.UserID); ubl {
+			response.Fail(c, errcode.Unauthorized, "Token 已失效")
+			c.Abort()
+			return
+		}
+		if uv, _ := redis.GetUserVersion(c.Request.Context(), claims.UserID); uv > 0 && claims.UserVersion < uv {
+			response.Fail(c, errcode.Unauthorized, "Token 已失效")
+			c.Abort()
+			return
+		}
 		clientID := c.GetHeader("X-Client-Id")
 		if clientID != "" && claims.ClientID != clientID {
 			response.Fail(c, errcode.ForbiddenApp, "Token 与应用不匹配")
+			c.Abort()
+			return
+		}
+		// 强制改密：仅放行改密 / step-up / me / logout
+		if claims.MustChangePassword && !passwordChangeAllowed(c) {
+			response.Fail(c, errcode.PasswordChangeRequired, "需要修改密码")
 			c.Abort()
 			return
 		}
@@ -110,6 +126,20 @@ func UserAuth(jwtMgr *jwtutil.Manager, redis *redisx.Client) gin.HandlerFunc {
 			c.Set(CtxClaimsExp, claims.ExpiresAt.Time)
 		}
 		c.Next()
+	}
+}
+
+func passwordChangeAllowed(c *gin.Context) bool {
+	path := c.FullPath()
+	if path == "" {
+		path = c.Request.URL.Path
+	}
+	switch path {
+	case "/api/v1/auth/password/set", "/api/v1/auth/step-up", "/api/v1/auth/me", "/api/v1/auth/logout",
+		"/api/v1/auth/userinfo", "/api/v1/auth/notifications", "/api/v1/auth/notifications/:id/read":
+		return true
+	default:
+		return strings.HasPrefix(path, "/api/v1/auth/notifications")
 	}
 }
 

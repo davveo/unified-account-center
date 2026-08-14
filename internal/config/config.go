@@ -84,11 +84,21 @@ type JWTConfig struct {
 	PreviousPublicKeyPath  string `yaml:"previous_public_key_path"`
 }
 
+type PasswordConfig struct {
+	MinLength           int  `yaml:"min_length"`
+	RequireLetterNumber bool `yaml:"require_letter_number"`
+	MaxAgeDays          int  `yaml:"max_age_days"`         // 密码最长有效期，0=不过期
+	NotifyLoginEmail    bool `yaml:"notify_login_email"`   // 新设备登录邮件提醒
+	NotifyLoginSMS      bool `yaml:"notify_login_sms"`     // 新设备登录短信提醒
+}
+
 type CaptchaConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Provider  string `yaml:"provider"` // mock | turnstile | recaptcha
-	SiteKey   string `yaml:"site_key"`
-	SecretKey string `yaml:"secret_key"`
+	Enabled    bool   `yaml:"enabled"`
+	Provider   string `yaml:"provider"` // mock | turnstile | recaptcha | geetest | yidun
+	SiteKey    string `yaml:"site_key"`
+	SecretKey  string `yaml:"secret_key"`
+	CaptchaID  string `yaml:"captcha_id"`  // 极验 / 易盾业务 ID
+	CaptchaKey string `yaml:"captcha_key"` // 极验 / 易盾密钥
 }
 
 func (c JWTConfig) AccessDuration() time.Duration {
@@ -106,13 +116,6 @@ type OTPConfig struct {
 	MaxTries              int `yaml:"max_tries"`
 	DailyLimitPerIdentity int `yaml:"daily_limit_per_identity"` // 单日单身份发码上限，0=20
 	DailyLimitPerIP       int `yaml:"daily_limit_per_ip"`       // 单日单 IP 发码上限，0=50
-}
-
-type PasswordConfig struct {
-	MinLength           int  `yaml:"min_length"`
-	RequireLetterNumber bool `yaml:"require_letter_number"`
-	MaxAgeDays          int  `yaml:"max_age_days"`        // 密码最长有效期，0=不过期
-	NotifyLoginEmail    bool `yaml:"notify_login_email"`  // 新设备登录邮件提醒
 }
 
 type MQConfig struct {

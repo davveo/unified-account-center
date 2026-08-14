@@ -4,31 +4,33 @@ import "fmt"
 
 // 业务错误码（对齐技术方案）
 const (
-	OK              = 0
-	BadRequest      = 40001
-	Unauthorized    = 40100
-	InvalidCred     = 40110
-	ForbiddenApp    = 40310
-	PendingApproval = 40320
-	ConflictAccount = 40910
-	MFARequired     = 40120
-	RateLimited     = 42900
-	NotFound        = 40400
-	Internal        = 50000
+	OK                 = 0
+	BadRequest         = 40001
+	Unauthorized       = 40100
+	InvalidCred        = 40110
+	ForbiddenApp       = 40310
+	PendingApproval    = 40320
+	ConflictAccount    = 40910
+	MFARequired        = 40120
+	PasswordChangeRequired = 40130
+	RateLimited        = 42900
+	NotFound           = 40400
+	Internal           = 50000
 )
 
 var messages = map[int]string{
-	OK:              "ok",
-	BadRequest:      "参数错误",
-	Unauthorized:    "未登录",
-	InvalidCred:     "凭证无效",
-	ForbiddenApp:    "应用无权限",
-	PendingApproval: "等待审批入驻",
-	ConflictAccount: "账户冲突",
-	MFARequired:     "需要二次验证",
-	RateLimited:     "请求过于频繁",
-	NotFound:        "资源不存在",
-	Internal:        "内部错误",
+	OK:                     "ok",
+	BadRequest:             "参数错误",
+	Unauthorized:           "未登录",
+	InvalidCred:            "凭证无效",
+	ForbiddenApp:           "应用无权限",
+	PendingApproval:        "等待审批入驻",
+	ConflictAccount:        "账户冲突",
+	MFARequired:            "需要二次验证",
+	PasswordChangeRequired: "需要修改密码",
+	RateLimited:            "请求过于频繁",
+	NotFound:               "资源不存在",
+	Internal:               "内部错误",
 }
 
 func Message(code int) string {

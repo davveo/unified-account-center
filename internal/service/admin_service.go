@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davveo/unified-account-center/internal/adapter"
 	"github.com/davveo/unified-account-center/internal/adapter/oauth"
 	"github.com/davveo/unified-account-center/internal/adapter/sms"
 	"github.com/davveo/unified-account-center/internal/config"
@@ -91,6 +92,7 @@ type AdminService struct {
 	smsHot     *sms.HotSender
 	mqProducer mq.Producer
 	webhookBus *webhook.Bus
+	mailer     adapter.Mailer
 }
 
 func NewAdminService(cfg *config.Config, repos *repository.Repos, oauthReg *oauth.Registry, rdb *redisx.Client) *AdminService {

@@ -286,6 +286,13 @@
         const opts = (f.options || []).map((o) => `<option value="${escapeHtml(o.value)}" ${o.value === f.value ? "selected" : ""}>${escapeHtml(o.label || o.value)}</option>`).join("");
         return `<div><label class="field-label" for="${id}">${escapeHtml(f.label)}</label><select id="${id}" class="input">${opts}</select></div>`;
       }
+      if (f.type === "textarea") {
+        return `<div>
+          <label class="field-label" for="${id}">${escapeHtml(f.label)}</label>
+          <textarea id="${id}" class="input min-h-[84px]" rows="4" placeholder="${escapeHtml(f.placeholder || "")}">${escapeHtml(f.value || "")}</textarea>
+          ${f.hint ? `<p class="modal-hint">${escapeHtml(f.hint)}</p>` : ""}
+        </div>`;
+      }
       return `<div>
         <label class="field-label" for="${id}">${escapeHtml(f.label)}</label>
         <input id="${id}" class="input" type="${f.type || "text"}" value="${escapeHtml(f.value || "")}" placeholder="${escapeHtml(f.placeholder || "")}" />
@@ -402,18 +409,20 @@
 
   async function loadDashboard() {
     try {
-      const d = await api("/api/v1/admin/dashboard");
+      const tenant = ($("dashTenant")?.value || "default").trim() || "default";
+      const d = await api(`/api/v1/admin/dashboard?tenant_id=${encodeURIComponent(tenant)}`);
       const p = d.process || {};
       const a = d.audit_24h || {};
       const pct = ((p.login_success_rate || 0) * 100).toFixed(1);
       const pct24 = ((a.login_success_rate || 0) * 100).toFixed(1);
+      const tid = d.tenant_id || tenant;
       $("dashCards").innerHTML = [
         ["登录成功率(进程)", pct + "%", `${p.login_ok || 0} / ${(p.login_ok || 0) + (p.login_fail || 0)}`],
         ["OTP 发送量", String(p.otp_sent || 0), "进程累计"],
         ["刷短信告警", String(p.otp_limit_hits || 0), "日限额命中"],
         ["短信通道", d.sms_provider || "-", "热更新可用"],
-        ["应用配额", `${(d.quota && d.quota.apps_used) || 0}/${(d.quota && d.quota.apps_max) || "-"}`, "租户 default"],
-        ["今日发码", `${(d.quota && d.quota.otp_today) || 0}/${(d.quota && d.quota.otp_daily_limit) || "-"}`, "租户日限"],
+        ["应用配额", `${(d.quota && d.quota.apps_used) || 0}/${(d.quota && d.quota.apps_max) || "-"}`, `租户 ${tid}`],
+        ["今日发码", `${(d.quota && d.quota.otp_today) || 0}/${(d.quota && d.quota.otp_daily_limit) || "-"}`, `租户 ${tid}`],
       ].map(([t, v, s]) => `
         <article class="panel">
           <div class="text-xs font-medium uppercase tracking-wide text-mist">${escapeHtml(t)}</div>
@@ -427,7 +436,7 @@
           <div><div class="text-mist text-xs">发码成功</div><div class="text-xl font-semibold">${a.challenge || 0}</div></div>
           <div><div class="text-mist text-xs">成功率</div><div class="text-xl font-semibold">${pct24}%</div></div>
         </div>
-        <div class="mt-3 text-xs text-mist">生成于 ${escapeHtml(d.generated_at || "")}</div>`;
+        <div class="mt-3 text-xs text-mist">租户 ${escapeHtml(tid)} · 生成于 ${escapeHtml(d.generated_at || "")}</div>`;
       const alerts = d.sms_alerts || [];
       const moreBtn = `<div class="mt-3 flex items-center justify-between gap-2">
         <div class="text-xs text-mist">仅展示近 24h 最近 20 条</div>
@@ -457,6 +466,20 @@
     } catch (e) {
       $("dashCards").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
     }
+  }
+
+  async function fillDashTenants() {
+    const sel = $("dashTenant");
+    if (!sel) return;
+    try {
+      const data = await api("/api/v1/admin/tenants?limit=200&offset=0");
+      const items = data.items || [];
+      const cur = sel.value || "default";
+      sel.innerHTML = items.length
+        ? items.map((t) => `<option value="${escapeHtml(t.tenant_id)}">${escapeHtml(t.name || t.tenant_id)}</option>`).join("")
+        : `<option value="default">default</option>`;
+      sel.value = items.some((t) => t.tenant_id === cur) ? cur : (items[0]?.tenant_id || "default");
+    } catch (_) { /* keep default */ }
   }
 
   async function loadSMSChannel() {
@@ -695,7 +718,9 @@
       return;
     }
 
-    if (name === "dashboard") loadDashboard();
+    if (name === "dashboard") {
+      fillDashTenants().finally(() => loadDashboard());
+    }
     if (name === "playground") preparePlayground();
     if (name === "apps") loadApps();
     if (name === "audits") loadAudits();
@@ -775,6 +800,10 @@
                 { value: "generic", label: "generic" },
                 { value: "wechat", label: "wechat" },
                 { value: "wecom", label: "wecom" },
+                { value: "google", label: "google" },
+                { value: "apple", label: "apple" },
+                { value: "dingtalk", label: "dingtalk" },
+                { value: "feishu", label: "feishu" },
               ],
             },
             { name: "client_id", label: "client_id / appid / corpid", placeholder: "必填", required: true },
@@ -822,6 +851,7 @@
         <div class="action-row">
           <button type="button" class="btn btn-ghost btn-xs" data-act="toggle" data-id="${id}" data-status="${escapeHtml(a.status)}">${a.status === "active" ? "停用" : "启用"}</button>
           <button type="button" class="btn btn-ghost btn-xs" data-act="methods" data-id="${id}">改方式</button>
+          <button type="button" class="btn btn-ghost btn-xs" data-act="urls" data-id="${id}">回调/CORS</button>
           <button type="button" class="btn btn-ghost btn-xs" data-act="brand" data-id="${id}">主题</button>
           <button type="button" class="btn btn-ghost btn-xs" data-act="rotate" data-id="${id}">轮换密钥</button>
           <a class="btn btn-ghost btn-xs" href="/login?client_id=${encodeURIComponent(a.client_id)}&redirect_uri=${encodeURIComponent((a.redirect_uris || [])[0] || "")}" target="_blank" rel="noopener">托管登录</a>
@@ -960,6 +990,21 @@
           body: JSON.stringify({ allowed_methods: raw.split(",").map((s) => s.trim()).filter(Boolean) }),
         });
         toast("登录方式已更新");
+        loadApps();
+      } else if (act === "urls") {
+        const app = state.apps.find((a) => a.client_id === clientId) || {};
+        const values = await uiForm("回调域名 / CORS", [
+          { name: "redirect_uris", label: "Redirect URIs（每行一个）", type: "textarea", value: (app.redirect_uris || []).join("\n"), required: false },
+          { name: "cors_origins", label: "CORS Origins（每行一个）", type: "textarea", value: (app.cors_origins || []).join("\n"), required: false },
+        ]);
+        if (!values) return;
+        const redirects = String(values.redirect_uris || "").split("\n").map((s) => s.trim()).filter(Boolean);
+        const cors = String(values.cors_origins || "").split("\n").map((s) => s.trim()).filter(Boolean);
+        await api(`/api/v1/admin/apps/${encodeURIComponent(clientId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ redirect_uris: redirects, cors_origins: cors }),
+        });
+        toast("回调域名 / CORS 已更新");
         loadApps();
       } else if (act === "brand") {
         const app = state.apps.find((a) => a.client_id === clientId) || {};
@@ -1130,12 +1175,14 @@
         return loadAudits();
       }
       $("auditsTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base">
-        <thead><tr><th>时间</th><th>action</th><th>user</th><th>client</th><th>成功</th><th>detail</th></tr></thead>
+        <thead><tr><th>时间</th><th>action</th><th>user</th><th>client</th><th>jti</th><th>device</th><th>成功</th><th>detail</th></tr></thead>
         <tbody>${items.map((a) => `<tr>
           <td class="whitespace-nowrap text-xs">${escapeHtml(a.created_at)}</td>
           <td class="font-mono text-xs">${escapeHtml(a.action)}</td>
           <td class="font-mono text-xs">${escapeHtml(a.user_id)}</td>
           <td class="font-mono text-xs">${escapeHtml(a.client_id)}</td>
+          <td class="font-mono text-xs" title="${escapeHtml(a.jti || "")}">${escapeHtml((a.jti || "").slice(0, 12))}${a.jti ? "…" : ""}</td>
+          <td class="font-mono text-xs">${escapeHtml(a.device_id || "")}</td>
           <td>${a.success ? `<span class="badge badge-ok">Y</span>` : `<span class="badge badge-warn">N</span>`}</td>
           <td class="text-xs text-mist">${escapeHtml(a.detail)}</td>
         </tr>`).join("")}</tbody></table></div>`, "audits", total);
@@ -1267,20 +1314,25 @@
         pages.invites = Math.max(1, Math.ceil(total / PAGE_SIZE));
         return loadInvites();
       }
-      $("invitesTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>code</th><th>租户</th><th>用途</th><th>状态</th><th>操作</th></tr></thead>
+      $("invitesTable").innerHTML = withPager(`<div class="overflow-x-auto"><table class="table-base"><thead><tr><th>code</th><th>租户</th><th>用途</th><th>一键链接</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>${items.map((i) => `<tr>
           <td class="font-mono text-xs">${escapeHtml(i.code)}</td>
           <td class="font-mono text-xs">${escapeHtml(i.tenant_id)}</td>
           <td class="text-xs">${i.used_count}/${i.max_uses}${i.email ? " · " + escapeHtml(i.email) : ""}${i.phone ? " · " + escapeHtml(i.phone) : ""}</td>
+          <td class="text-xs max-w-[220px] truncate" title="${escapeHtml(i.invite_url || "")}">${escapeHtml(i.invite_url || "-")}</td>
           <td>${statusBadge(i.status === "active" ? "active" : i.status)}</td>
           <td class="action-row">
-            <button type="button" class="btn btn-ghost btn-xs" data-copy="${escapeHtml(i.code)}">复制</button>
+            <button type="button" class="btn btn-ghost btn-xs" data-copy="${escapeHtml(i.code)}">复制码</button>
+            <button type="button" class="btn btn-ghost btn-xs" data-copy-url="${escapeHtml(i.invite_url || "")}" ${i.invite_url ? "" : "disabled"}>复制链接</button>
             <button type="button" class="btn btn-ghost btn-xs" data-revoke-inv="${escapeHtml(i.code)}" ${i.status !== "active" ? "disabled" : ""}>吊销</button>
           </td>
         </tr>`).join("")}</tbody></table></div>`, "invites", total);
       bindPager($("invitesTable"), "invites", () => loadInvites());
       $("invitesTable").querySelectorAll("[data-copy]").forEach((btn) => {
         btn.onclick = async () => toast((await copyText(btn.dataset.copy)) ? "已复制" : "复制失败", "ok");
+      });
+      $("invitesTable").querySelectorAll("[data-copy-url]").forEach((btn) => {
+        btn.onclick = async () => toast((await copyText(btn.dataset.copyUrl)) ? "链接已复制" : "复制失败", "ok");
       });
       $("invitesTable").querySelectorAll("[data-revoke-inv]").forEach((btn) => {
         btn.onclick = async () => {
@@ -1530,6 +1582,7 @@
     } catch (err) { uiAlert(err.message); }
   });
   $("refreshDashboard")?.addEventListener("click", loadDashboard);
+  $("dashTenant")?.addEventListener("change", loadDashboard);
   $("refreshSMS")?.addEventListener("click", loadSMSChannel);
   $("refreshJWTKeys")?.addEventListener("click", loadJWTKeys);
   $("refreshTenants")?.addEventListener("click", () => loadTenants({ reset: true }));
@@ -1684,6 +1737,10 @@
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
+    const cors = String(fd.get("cors_origins") || "")
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
     const payload = {
       name: fd.get("name"),
       tenant_id: fd.get("tenant_id") || "default",
@@ -1691,6 +1748,7 @@
       client_secret: fd.get("client_secret") || undefined,
       allowed_methods: methods,
       redirect_uris: redirects,
+      cors_origins: cors,
       auto_register: !!fd.get("auto_register"),
     };
     try {

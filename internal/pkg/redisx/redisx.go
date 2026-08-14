@@ -70,6 +70,32 @@ func (c *Client) IsAccessBlacklisted(ctx context.Context, jti string) (bool, err
 	return n > 0, err
 }
 
+// BumpUserVersion 强退时递增用户会话版本，使旧 access JWT 立即失效。
+func (c *Client) BumpUserVersion(ctx context.Context, userID string) (int64, error) {
+	return c.rdb.Incr(ctx, "uac:uv:"+userID).Result()
+}
+
+func (c *Client) GetUserVersion(ctx context.Context, userID string) (int64, error) {
+	n, err := c.rdb.Get(ctx, "uac:uv:"+userID).Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return n, err
+}
+
+// BlacklistUserAccess 按用户维度旁路拉黑（网关可配合 introspect / token-check）。
+func (c *Client) BlacklistUserAccess(ctx context.Context, userID string, ttl time.Duration) error {
+	if ttl <= 0 {
+		ttl = 2 * time.Hour
+	}
+	return c.rdb.Set(ctx, "uac:bl:user:"+userID, "1", ttl).Err()
+}
+
+func (c *Client) IsUserAccessBlacklisted(ctx context.Context, userID string) (bool, error) {
+	n, err := c.rdb.Exists(ctx, "uac:bl:user:"+userID).Result()
+	return n > 0, err
+}
+
 func (c *Client) SetJSON(ctx context.Context, key string, v interface{}, ttl time.Duration) error {
 	b, err := json.Marshal(v)
 	if err != nil {

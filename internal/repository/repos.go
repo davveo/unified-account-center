@@ -156,5 +156,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.PlatformSetting{},
 		&model.WebhookEndpoint{},
 		&model.WebhookDelivery{},
+		&model.UserNotification{},
 	)
 }

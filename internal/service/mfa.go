@@ -167,7 +167,7 @@ func (s *AuthService) MFAComplete(ctx context.Context, meta RequestMeta, dto MFA
 	if client.Fingerprint == "" {
 		client.Fingerprint = pending.FP
 	}
-	token, err := s.issueTokens(ctx, app, user, client, meta)
+	token, err := s.issueTokens(ctx, app, user, client, &meta)
 	if err != nil {
 		return nil, err
 	}

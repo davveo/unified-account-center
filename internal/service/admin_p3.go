@@ -18,11 +18,13 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
 	"github.com/davveo/unified-account-center/internal/pkg/observability"
 	"github.com/davveo/unified-account-center/internal/repository"
+	"gorm.io/gorm"
 )
 
 const settingKeySMSProvider = "sms.provider"
 
 type DashboardSummary struct {
+	TenantID    string                 `json:"tenant_id"`
 	Process     observability.Snapshot `json:"process"`
 	Audit24h    DashboardAuditStats    `json:"audit_24h"`
 	SMSAlerts   []DashboardAlert       `json:"sms_alerts"`
@@ -56,16 +58,24 @@ type DashboardAlert struct {
 }
 
 func (s *AdminService) Dashboard(ctx context.Context) (*DashboardSummary, error) {
+	return s.DashboardForTenant(ctx, "default")
+}
+
+func (s *AdminService) DashboardForTenant(ctx context.Context, tenantID string) (*DashboardSummary, error) {
+	if tenantID == "" {
+		tenantID = "default"
+	}
 	snap := observability.MetricsSnapshot()
 	since := time.Now().Add(-24 * time.Hour)
-	stats, err := s.auditStatsSince(ctx, since)
+	stats, err := s.auditStatsSince(ctx, since, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	alerts, _ := s.recentSMSAlerts(ctx, since, 20)
+	alerts, _ := s.recentSMSAlerts(ctx, since, 20, tenantID)
 	provider := s.currentSMSProvider()
-	quota := s.dashboardQuota(ctx, "default")
+	quota := s.dashboardQuota(ctx, tenantID)
 	return &DashboardSummary{
+		TenantID:    tenantID,
 		Process:     snap,
 		Audit24h:    stats,
 		SMSAlerts:   alerts,
@@ -85,25 +95,24 @@ func (s *AdminService) dashboardQuota(ctx context.Context, tenantID string) Dash
 	q.AppsUsed = total
 	dayStart := time.Now().Truncate(24 * time.Hour)
 	_ = s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).
-		Where("created_at >= ? AND action = ? AND success = ?", dayStart, "challenge", true).
+		Where("created_at >= ? AND action = ? AND success = ? AND tenant_id = ?", dayStart, "challenge", true, tenantID).
 		Count(&q.OTPToday)
 	return q
 }
 
-func (s *AdminService) auditStatsSince(ctx context.Context, since time.Time) (DashboardAuditStats, error) {
+func (s *AdminService) auditStatsSince(ctx context.Context, since time.Time, tenantID string) (DashboardAuditStats, error) {
 	var out DashboardAuditStats
-	_ = s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).
-		Where("created_at >= ? AND action = ? AND success = ?", since, "login_ok", true).
-		Count(&out.LoginOK)
-	_ = s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).
-		Where("created_at >= ? AND action = ?", since, "login_fail").
-		Count(&out.LoginFail)
-	_ = s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).
-		Where("created_at >= ? AND action = ? AND success = ?", since, "challenge", true).
-		Count(&out.Challenge)
-	_ = s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).
-		Where("created_at >= ? AND action IN ?", since, []string{"otp_limit_alert", "risk_alert"}).
-		Count(&out.OTPLimit)
+	base := func() *gorm.DB {
+		q := s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).Where("created_at >= ?", since)
+		if tenantID != "" && tenantID != "*" {
+			q = q.Where("tenant_id = ?", tenantID)
+		}
+		return q
+	}
+	_ = base().Where("action = ? AND success = ?", "login_ok", true).Count(&out.LoginOK)
+	_ = base().Where("action = ?", "login_fail").Count(&out.LoginFail)
+	_ = base().Where("action = ? AND success = ?", "challenge", true).Count(&out.Challenge)
+	_ = base().Where("action IN ?", []string{"otp_limit_alert", "risk_alert"}).Count(&out.OTPLimit)
 	total := out.LoginOK + out.LoginFail
 	if total > 0 {
 		out.SuccessRate = float64(out.LoginOK) / float64(total)
@@ -111,12 +120,15 @@ func (s *AdminService) auditStatsSince(ctx context.Context, since time.Time) (Da
 	return out, nil
 }
 
-func (s *AdminService) recentSMSAlerts(ctx context.Context, since time.Time, limit int) ([]DashboardAlert, error) {
-	var list []model.AuditLog
-	err := s.repos.DB.WithContext(ctx).
+func (s *AdminService) recentSMSAlerts(ctx context.Context, since time.Time, limit int, tenantID string) ([]DashboardAlert, error) {
+	q := s.repos.DB.WithContext(ctx).
 		Where("created_at >= ? AND (action LIKE ? OR detail LIKE ? OR action = ?)",
-			since, "%otp%", "%otp%", "risk_alert").
-		Order("id desc").Limit(limit).Find(&list).Error
+			since, "%otp%", "%otp%", "risk_alert")
+	if tenantID != "" && tenantID != "*" {
+		q = q.Where("tenant_id = ?", tenantID)
+	}
+	var list []model.AuditLog
+	err := q.Order("id desc").Limit(limit).Find(&list).Error
 	if err != nil {
 		return nil, err
 	}

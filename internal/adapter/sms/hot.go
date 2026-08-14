@@ -29,6 +29,14 @@ func (h *HotSender) SendOTP(ctx context.Context, phone, code, scene string) erro
 	return s.SendOTP(ctx, phone, code, scene)
 }
 
+func (h *HotSender) SendText(ctx context.Context, phone, content string) error {
+	s, _ := h.cur.Load().(adapter.SMSSender)
+	if n, ok := s.(adapter.SMSNotifier); ok {
+		return n.SendText(ctx, phone, content)
+	}
+	return NewMock().SendText(ctx, phone, content)
+}
+
 func (h *HotSender) Swap(next adapter.SMSSender) {
 	if next == nil {
 		next = NewMock()

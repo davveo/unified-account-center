@@ -120,11 +120,15 @@ func New(cfg *config.Config) (*Application, error) {
 	if m, ok := emailSender.(adapter.Mailer); ok {
 		authSvc.SetMailer(m)
 	}
+	authSvc.SetSMSNotifier(smsHot)
 	adminSvc := service.NewAdminService(cfg, repos, oauthReg, rdb)
 	adminSvc.SetJWT(jwtMgr)
 	adminSvc.SetSMSHot(smsHot)
 	adminSvc.SetMQProducer(producer)
 	adminSvc.SetWebhookBus(whBus)
+	if m, ok := emailSender.(adapter.Mailer); ok {
+		adminSvc.SetMailer(m)
+	}
 	adminSvc.RestoreSMSChannel(context.Background())
 	_ = adminSvc.EnsureDefaultTenant(context.Background())
 	h := handler.NewAuthHandler(authSvc, oauthSvc)

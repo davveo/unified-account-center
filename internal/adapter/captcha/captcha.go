@@ -54,9 +54,32 @@ func NewFromConfig(cfg config.CaptchaConfig) Verifier {
 		return NewTurnstile(cfg.SecretKey)
 	case "recaptcha":
 		return NewRecaptcha(cfg.SecretKey)
+	case "geetest":
+		id := cfg.CaptchaID
+		if id == "" {
+			id = cfg.SiteKey
+		}
+		key := cfg.CaptchaKey
+		if key == "" {
+			key = cfg.SecretKey
+		}
+		return NewGeetest(id, key)
+	case "yidun", "netease":
+		id := cfg.CaptchaID
+		if id == "" {
+			id = cfg.SiteKey
+		}
+		return NewYidun(id, cfg.SiteKey, firstNonEmpty(cfg.CaptchaKey, cfg.SecretKey))
 	default:
 		return NewMock(true)
 	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
 }
 
 type Turnstile struct {

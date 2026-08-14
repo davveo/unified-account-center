@@ -207,7 +207,7 @@ func (s *AuthService) PasskeyLoginFinish(ctx context.Context, meta RequestMeta, 
 		_ = s.repos.WebAuthn.Update(ctx, row)
 	}
 	u, _ := s.repos.User.FindByUserID(ctx, payload.UserID)
-	token, err := s.issueTokens(ctx, app, u, client, meta)
+	token, err := s.issueTokens(ctx, app, u, client, &meta)
 	if err != nil {
 		return nil, err
 	}

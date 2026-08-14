@@ -6,6 +6,9 @@
   const codeChallenge = qs.get("code_challenge") || "";
   const deviceId = qs.get("device_id") || ("web_" + Math.random().toString(36).slice(2, 10));
 
+  const inviteCode = qs.get("invite_code") || "";
+  const hintEmail = qs.get("hint_email") || "";
+
   const $ = (id) => document.getElementById(id);
   const errBox = $("err");
   let cfg = null;
@@ -43,12 +46,20 @@
   }
 
   async function finishWithLogin(login) {
+    const token = login.token || {};
+    if (token.must_change_password || token.password_expired) {
+      const u = new URL("/account/", location.origin);
+      u.searchParams.set("client_id", clientId);
+      u.searchParams.set("access_token", token.access_token || "");
+      u.searchParams.set("force", "1");
+      location.href = u.toString();
+      return;
+    }
     if (!redirectURI) {
       showErr("登录成功，但缺少 redirect_uri，无法回跳");
       console.log(login);
       return;
     }
-    const token = login.token || {};
     const issued = await api("/api/v1/auth/hosted/code", {
       method: "POST",
       headers: { Authorization: "Bearer " + token.access_token },
@@ -134,6 +145,14 @@
     });
     const first = (cfg.allowed_methods || [])[0];
     if (first) selectMethod(first);
+    if (hintEmail) {
+      $("identity").value = hintEmail;
+      if ((cfg.allowed_methods || []).includes("email_otp")) selectMethod("email_otp");
+      else if ((cfg.allowed_methods || []).includes("email_password")) selectMethod("email_password");
+    }
+    if (inviteCode) {
+      $("subtitle").textContent = (cfg.name || "统一账户中台") + " · 邀请注册";
+    }
   }
 
   $("sendOtp").onclick = async () => {
@@ -175,6 +194,7 @@
           method,
           identity: $("identity").value.trim(),
           credential,
+          invite_code: inviteCode || undefined,
           client: { device_id: deviceId, platform: "web", fingerprint: deviceId },
         }),
       });

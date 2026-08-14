@@ -414,3 +414,16 @@ type WebhookDelivery struct {
 }
 
 func (WebhookDelivery) TableName() string { return "webhook_deliveries" }
+
+// UserNotification 站内通知（登录提醒等）。
+type UserNotification struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	UserID    string    `gorm:"size:64;index;not null" json:"user_id"`
+	Kind      string    `gorm:"size:64;index;not null" json:"kind"`
+	Title     string    `gorm:"size:128;not null" json:"title"`
+	Body      string    `gorm:"type:text" json:"body"`
+	Read      bool      `gorm:"not null;default:false" json:"read"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (UserNotification) TableName() string { return "user_notifications" }

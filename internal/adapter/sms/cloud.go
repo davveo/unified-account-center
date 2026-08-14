@@ -43,6 +43,11 @@ func (s *CloudSender) SendOTP(ctx context.Context, phone, code, scene string) er
 	}
 }
 
+func (s *CloudSender) SendText(ctx context.Context, phone, content string) error {
+	log.Printf("[%s-sms-text] phone=%s content=%s", s.provider, phone, content)
+	return nil
+}
+
 func (s *CloudSender) sendAliyun(ctx context.Context, phone, code string) error {
 	// 简化：调用 dysmsapi SendSms；签名按阿里云 RPC 风格
 	params := map[string]string{

@@ -477,7 +477,11 @@ func (h *AdminHandler) ListRoles(c *gin.Context) {
 }
 
 func (h *AdminHandler) Dashboard(c *gin.Context) {
-	res, err := h.admin.Dashboard(c.Request.Context())
+	tenantID := c.Query("tenant_id")
+	if tenantID == "" {
+		tenantID = "default"
+	}
+	res, err := h.admin.DashboardForTenant(c.Request.Context(), tenantID)
 	if err != nil {
 		response.FailErr(c, err)
 		return

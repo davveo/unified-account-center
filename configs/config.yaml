@@ -48,9 +48,11 @@ jwt:
 
 captcha:
   enabled: false
-  provider: mock # mock | turnstile | recaptcha
+  provider: mock # mock | turnstile | recaptcha | geetest | yidun
   site_key: ""
   secret_key: ""
+  captcha_id: ""   # 极验 captcha_id / 易盾 captchaId
+  captcha_key: ""  # 极验 key / 易盾 secretKey
 
 otp:
   length: 6
@@ -63,8 +65,9 @@ otp:
 password:
   min_length: 8
   require_letter_number: true
-  max_age_days: 0        # 密码最长有效期；>0 时登录返回 password_expired 标记
-  notify_login_email: false # 新设备登录时给已绑定邮箱发提醒（需 email provider 支持 SendMail）
+  max_age_days: 0        # 密码最长有效期；>0 时登录返回 password_expired / must_change_password
+  notify_login_email: false # 新设备登录邮件提醒
+  notify_login_sms: false   # 新设备登录短信提醒（站内通知始终写入）
 
 mq:
   enabled: false
@@ -102,6 +105,26 @@ oauth:
       token_url: "https://github.com/login/oauth/access_token"
       userinfo_url: "https://api.github.com/user"
       scopes: ["read:user", "user:email"]
+    google:
+      kind: google
+      client_id: ""
+      client_secret: ""
+      scopes: ["openid", "email", "profile"]
+    apple:
+      kind: apple
+      client_id: ""
+      client_secret: ""
+      scopes: ["name", "email"]
+    dingtalk:
+      kind: dingtalk
+      client_id: ""
+      client_secret: ""
+      scopes: ["openid"]
+    feishu:
+      kind: feishu
+      client_id: ""
+      client_secret: ""
+      scopes: ["openid"]
     wechat:
       kind: wechat
       client_id: ""      # appid

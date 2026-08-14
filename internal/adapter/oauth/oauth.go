@@ -340,6 +340,59 @@ func mapUserInfo(provider string, body []byte) (*adapter.OAuthUserInfo, error) {
 		if v, ok := m["email"].(string); ok {
 			info.Email = v
 		}
+	case "google", "apple":
+		if v, ok := m["sub"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		}
+		if v, ok := m["name"].(string); ok {
+			info.Name = v
+		}
+		if v, ok := m["picture"].(string); ok {
+			info.Avatar = v
+		}
+		if v, ok := m["email"].(string); ok {
+			info.Email = v
+		}
+	case "feishu", "lark":
+		data, _ := m["data"].(map[string]interface{})
+		if data == nil {
+			data = m
+		}
+		if v, ok := data["open_id"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		} else if v, ok := data["union_id"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		} else if v, ok := data["sub"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		}
+		if v, ok := data["name"].(string); ok {
+			info.Name = v
+		}
+		if v, ok := data["avatar_url"].(string); ok {
+			info.Avatar = v
+		}
+		if v, ok := data["email"].(string); ok {
+			info.Email = v
+		}
+	case "dingtalk":
+		if v, ok := m["openId"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		} else if v, ok := m["unionId"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		} else if v, ok := m["sub"]; ok {
+			info.Subject = fmt.Sprintf("%v", v)
+		}
+		if v, ok := m["nick"].(string); ok {
+			info.Name = v
+		} else if v, ok := m["name"].(string); ok {
+			info.Name = v
+		}
+		if v, ok := m["avatarUrl"].(string); ok {
+			info.Avatar = v
+		}
+		if v, ok := m["email"].(string); ok {
+			info.Email = v
+		}
 	default:
 		if v, ok := m["sub"]; ok {
 			info.Subject = fmt.Sprintf("%v", v)
@@ -367,15 +420,22 @@ func mapUserInfo(provider string, body []byte) (*adapter.OAuthUserInfo, error) {
 func buildProvider(name string, cfg config.OAuthProviderConfig) adapter.OAuthProvider {
 	kind := strings.ToLower(cfg.Kind)
 	if kind == "" {
-		switch name {
+		switch strings.ToLower(name) {
 		case "wechat":
 			kind = "wechat"
 		case "wecom", "wechat_work", "enterprise_wechat":
 			kind = "wecom"
+		case "apple", "google", "dingtalk", "feishu", "lark":
+			kind = strings.ToLower(name)
+			if kind == "lark" {
+				kind = "feishu"
+			}
 		default:
 			kind = "generic"
 		}
 	}
+	// 标准 OIDC / OAuth2 厂商：补齐默认端点后走 Generic
+	cfg = applyOAuthPresets(name, kind, cfg)
 	switch kind {
 	case "wechat":
 		return NewWeChat(name, cfg)
@@ -384,6 +444,65 @@ func buildProvider(name string, cfg config.OAuthProviderConfig) adapter.OAuthPro
 	default:
 		return NewGeneric(name, cfg)
 	}
+}
+
+func applyOAuthPresets(name, kind string, cfg config.OAuthProviderConfig) config.OAuthProviderConfig {
+	k := kind
+	if k == "" || k == "generic" {
+		k = strings.ToLower(name)
+	}
+	switch k {
+	case "google":
+		if cfg.AuthURL == "" {
+			cfg.AuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
+		}
+		if cfg.TokenURL == "" {
+			cfg.TokenURL = "https://oauth2.googleapis.com/token"
+		}
+		if cfg.UserInfoURL == "" {
+			cfg.UserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
+		}
+		if len(cfg.Scopes) == 0 {
+			cfg.Scopes = []string{"openid", "email", "profile"}
+		}
+	case "apple":
+		if cfg.AuthURL == "" {
+			cfg.AuthURL = "https://appleid.apple.com/auth/authorize"
+		}
+		if cfg.TokenURL == "" {
+			cfg.TokenURL = "https://appleid.apple.com/auth/token"
+		}
+		if len(cfg.Scopes) == 0 {
+			cfg.Scopes = []string{"name", "email"}
+		}
+	case "dingtalk":
+		if cfg.AuthURL == "" {
+			cfg.AuthURL = "https://login.dingtalk.com/oauth2/auth"
+		}
+		if cfg.TokenURL == "" {
+			cfg.TokenURL = "https://api.dingtalk.com/v1.0/oauth2/userAccessToken"
+		}
+		if cfg.UserInfoURL == "" {
+			cfg.UserInfoURL = "https://api.dingtalk.com/v1.0/contact/users/me"
+		}
+		if len(cfg.Scopes) == 0 {
+			cfg.Scopes = []string{"openid"}
+		}
+	case "feishu", "lark":
+		if cfg.AuthURL == "" {
+			cfg.AuthURL = "https://open.feishu.cn/open-apis/authen/v1/authorize"
+		}
+		if cfg.TokenURL == "" {
+			cfg.TokenURL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
+		}
+		if cfg.UserInfoURL == "" {
+			cfg.UserInfoURL = "https://open.feishu.cn/open-apis/authen/v1/user_info"
+		}
+		if len(cfg.Scopes) == 0 {
+			cfg.Scopes = []string{"openid", "email"}
+		}
+	}
+	return cfg
 }
 
 // Registry 管理多个 Provider，支持热更新。

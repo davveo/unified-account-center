@@ -16,6 +16,11 @@ func (m *MockSender) SendOTP(ctx context.Context, phone, code, scene string) err
 	return nil
 }
 
+func (m *MockSender) SendText(ctx context.Context, phone, content string) error {
+	log.Printf("[mock-sms-text] phone=%s content=%s", phone, content)
+	return nil
+}
+
 type MQSender struct {
 	producer mq.Producer
 	topic    string
@@ -33,4 +38,9 @@ func (s *MQSender) SendOTP(ctx context.Context, phone, code, scene string) error
 		"type":  "otp",
 	}
 	return s.producer.SendJSON(ctx, s.topic, "sms_otp", body)
+}
+
+func (s *MQSender) SendText(ctx context.Context, phone, content string) error {
+	body := map[string]string{"phone": phone, "content": content, "type": "text"}
+	return s.producer.SendJSON(ctx, s.topic, "sms_text", body)
 }

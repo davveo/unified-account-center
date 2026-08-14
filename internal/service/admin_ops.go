@@ -201,7 +201,18 @@ func (s *AdminService) ForceLogout(ctx context.Context, userID, clientID string)
 	if user == nil {
 		return errcode.New(errcode.NotFound, "用户不存在")
 	}
-	return s.repos.Refresh.RevokeAllByUser(ctx, userID, clientID, time.Now())
+	if err := s.repos.Refresh.RevokeAllByUser(ctx, userID, clientID, time.Now()); err != nil {
+		return err
+	}
+	if s.redis != nil {
+		_, _ = s.redis.BumpUserVersion(ctx, userID)
+		ttl := 2 * time.Hour
+		if s.cfg != nil && s.cfg.JWT.AccessTTL > 0 {
+			ttl = time.Duration(s.cfg.JWT.AccessTTL) * time.Second
+		}
+		_ = s.redis.BlacklistUserAccess(ctx, userID, ttl)
+	}
+	return nil
 }
 
 type AuditView struct {

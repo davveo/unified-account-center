@@ -3,22 +3,138 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>账户中心</title>
+  <title>账户自助中心</title>
   <link rel="stylesheet" href="/account/static/style.css" />
 </head>
 <body>
   <main class="wrap">
-    <h1>账户自助中心</h1>
-    <p class="hint">粘贴 Access Token 与 Client ID 后管理会话 / MFA / 资料（调用现有 API）。</p>
-    <label>Client ID <input id="clientId" value="app_demo" /></label>
-    <label>Access Token <textarea id="token" rows="3" placeholder="Bearer access token"></textarea></label>
-    <div class="actions">
-      <button id="btnMe" type="button">刷新资料</button>
-      <button id="btnSessions" type="button">列出会话</button>
-      <button id="btnMFA" type="button">MFA 状态</button>
-      <button id="btnRevokeOthers" type="button">退出其他设备</button>
-    </div>
-    <pre id="out">等待操作…</pre>
+    <header class="hero">
+      <div>
+        <p class="brand">Unified Account</p>
+        <h1>账户自助中心</h1>
+        <p class="hint" id="heroHint">管理密码、绑定、MFA、Passkey 与登录会话</p>
+      </div>
+      <div class="session-box" id="sessionBox">
+        <label>Client ID <input id="clientId" value="app_demo" /></label>
+        <label>Access Token <textarea id="token" rows="2" placeholder="登录后自动填入，或粘贴 Bearer token"></textarea></label>
+        <div class="actions">
+          <button id="btnSaveSession" type="button">保存会话</button>
+          <button id="btnClearSession" type="button" class="ghost">清除</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="forcePwd" class="panel force hidden">
+      <h2>需要修改密码</h2>
+      <p class="hint">当前密码已过期，请设置新密码后重新登录。</p>
+      <label>新密码 <input id="forcePassword" type="password" autocomplete="new-password" /></label>
+      <label>确认密码 <input id="forcePassword2" type="password" autocomplete="new-password" /></label>
+      <button id="btnForcePwd" type="button">提交并重新登录</button>
+      <p id="forceMsg" class="msg"></p>
+    </section>
+
+    <nav class="tabs" id="tabs">
+      <button type="button" class="tab active" data-tab="profile">资料</button>
+      <button type="button" class="tab" data-tab="password">改密</button>
+      <button type="button" class="tab" data-tab="bind">绑定</button>
+      <button type="button" class="tab" data-tab="mfa">MFA</button>
+      <button type="button" class="tab" data-tab="passkey">Passkey</button>
+      <button type="button" class="tab" data-tab="sessions">会话</button>
+      <button type="button" class="tab" data-tab="notify">通知</button>
+    </nav>
+
+    <section class="panel tab-panel active" data-panel="profile">
+      <h2>账户资料</h2>
+      <div class="actions">
+        <button id="btnMe" type="button">刷新资料</button>
+      </div>
+      <pre id="outProfile">等待加载…</pre>
+    </section>
+
+    <section class="panel tab-panel" data-panel="password">
+      <h2>修改密码</h2>
+      <p class="hint">安全操作需先 Step-up（OTP / TOTP）。强制改密场景可跳过。</p>
+      <label>Step-up Token <input id="stepUpToken" placeholder="可选；强制改密时可空" /></label>
+      <div class="row">
+        <label>Step-up 方式
+          <select id="stepUpMethod">
+            <option value="phone_otp">手机 OTP</option>
+            <option value="email_otp">邮箱 OTP</option>
+            <option value="totp">TOTP</option>
+          </select>
+        </label>
+        <label>身份（手机/邮箱） <input id="stepUpIdentity" placeholder="手机号或邮箱" /></label>
+      </div>
+      <label>OTP / TOTP 码 <input id="stepUpOTP" inputmode="numeric" placeholder="验证码" /></label>
+      <div class="actions">
+        <button id="btnStepUpChallenge" type="button" class="ghost">发 OTP</button>
+        <button id="btnStepUp" type="button" class="ghost">获取 Step-up</button>
+      </div>
+      <label>新密码 <input id="newPassword" type="password" autocomplete="new-password" /></label>
+      <button id="btnSetPassword" type="button">保存密码</button>
+      <p id="pwdMsg" class="msg"></p>
+    </section>
+
+    <section class="panel tab-panel" data-panel="bind">
+      <h2>绑定 / 解绑身份</h2>
+      <label>方式
+        <select id="bindMethod">
+          <option value="phone_otp">手机 OTP</option>
+          <option value="email_otp">邮箱 OTP</option>
+        </select>
+      </label>
+      <label>手机 / 邮箱 <input id="bindIdentity" /></label>
+      <label>验证码 <input id="bindOTP" /></label>
+      <div class="actions">
+        <button id="btnBindChallenge" type="button" class="ghost">发验证码</button>
+        <button id="btnBind" type="button">绑定</button>
+        <button id="btnUnbind" type="button" class="ghost">解绑</button>
+      </div>
+      <p id="bindMsg" class="msg"></p>
+    </section>
+
+    <section class="panel tab-panel" data-panel="mfa">
+      <h2>MFA（TOTP）</h2>
+      <div class="actions">
+        <button id="btnMFAStatus" type="button" class="ghost">刷新状态</button>
+        <button id="btnMFASetup" type="button">开始绑定</button>
+      </div>
+      <pre id="outMFA">—</pre>
+      <label>验证码 <input id="mfaCode" inputmode="numeric" /></label>
+      <div class="actions">
+        <button id="btnMFAEnable" type="button">启用 MFA</button>
+        <button id="btnMFADisable" type="button" class="ghost">关闭 MFA</button>
+      </div>
+      <p id="mfaMsg" class="msg"></p>
+    </section>
+
+    <section class="panel tab-panel" data-panel="passkey">
+      <h2>Passkey</h2>
+      <div class="actions">
+        <button id="btnPasskeys" type="button" class="ghost">刷新列表</button>
+        <button id="btnPasskeyReg" type="button">注册 Passkey</button>
+      </div>
+      <div id="passkeyList" class="list">—</div>
+      <p id="passkeyMsg" class="msg"></p>
+    </section>
+
+    <section class="panel tab-panel" data-panel="sessions">
+      <h2>登录会话</h2>
+      <div class="actions">
+        <button id="btnSessions" type="button" class="ghost">刷新</button>
+        <button id="btnRevokeOthers" type="button">退出其他设备</button>
+      </div>
+      <div id="sessionList" class="list">—</div>
+      <p id="sessionMsg" class="msg"></p>
+    </section>
+
+    <section class="panel tab-panel" data-panel="notify">
+      <h2>站内通知</h2>
+      <div class="actions">
+        <button id="btnNotify" type="button" class="ghost">刷新</button>
+      </div>
+      <div id="notifyList" class="list">—</div>
+    </section>
   </main>
   <script src="/account/static/app.js"></script>
 </body>

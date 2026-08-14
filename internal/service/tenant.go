@@ -217,6 +217,14 @@ func (s *AuthService) assertTenantOTPQuota(ctx context.Context, tenantID string)
 	}
 	if !ok {
 		s.fireRiskAlert(ctx, "tenant_otp_limit", map[string]interface{}{"tenant_id": tenantID, "limit": t.DailyOTPLimit})
+		s.emit(model.EventLoginFailed, tenantID, "", "", map[string]interface{}{
+			"reason": "tenant_otp_limit", "limit": t.DailyOTPLimit,
+		})
+		if s.webhookBus != nil {
+			s.webhookBus.Emit(ctx, "quota.otp_limit", tenantID, "", "", map[string]interface{}{
+				"tenant_id": tenantID, "limit": t.DailyOTPLimit,
+			})
+		}
 		return errcode.New(errcode.RateLimited, "租户日发码额度已用尽")
 	}
 	return nil
@@ -244,6 +252,11 @@ func (s *AdminService) assertTenantAppQuota(ctx context.Context, tenantID string
 		return errcode.Wrap(errcode.Internal, "统计应用失败", err)
 	}
 	if int(n) >= t.MaxApps {
+		if s.webhookBus != nil {
+			s.webhookBus.Emit(ctx, "quota.apps_limit", tenantID, "", "", map[string]interface{}{
+				"tenant_id": tenantID, "max_apps": t.MaxApps, "used": n,
+			})
+		}
 		return errcode.New(errcode.ForbiddenApp, "租户应用数已达上限")
 	}
 	return nil

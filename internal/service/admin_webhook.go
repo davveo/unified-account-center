@@ -7,12 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davveo/unified-account-center/internal/adapter"
 	"github.com/davveo/unified-account-center/internal/model"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
 	"github.com/davveo/unified-account-center/internal/pkg/webhook"
 )
 
 func (s *AdminService) SetWebhookBus(bus *webhook.Bus) { s.webhookBus = bus }
+func (s *AdminService) SetMailer(m adapter.Mailer)     { s.mailer = m }
 
 type UpsertWebhookRequest struct {
 	Name        string   `json:"name" binding:"required"`

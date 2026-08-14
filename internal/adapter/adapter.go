@@ -17,6 +17,11 @@ type Mailer interface {
 	SendMail(ctx context.Context, to, subject, body string) error
 }
 
+// SMSNotifier 非 OTP 短信通知。
+type SMSNotifier interface {
+	SendText(ctx context.Context, phone, content string) error
+}
+
 // OAuthUserInfo 第三方用户信息。
 type OAuthUserInfo struct {
 	Subject string

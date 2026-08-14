@@ -130,7 +130,12 @@
 
       <!-- Dashboard -->
       <section id="view-dashboard" class="view active space-y-4">
-        <div class="flex justify-end">
+        <div class="flex justify-end gap-2 items-end flex-wrap">
+          <label class="text-sm text-mist">租户
+            <select id="dashTenant" class="input w-48 mt-1">
+              <option value="default">default</option>
+            </select>
+          </label>
           <button id="refreshDashboard" type="button" class="btn btn-ghost">刷新</button>
         </div>
         <div id="dashCards" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"></div>
@@ -175,6 +180,10 @@
               <div>
                 <label class="field-label">Redirect URIs（每行一个）</label>
                 <textarea class="input min-h-[84px]" name="redirect_uris" rows="3" placeholder="http://localhost:3000/callback"></textarea>
+              </div>
+              <div>
+                <label class="field-label">CORS Origins（每行一个，浏览器跨域白名单）</label>
+                <textarea class="input min-h-[64px]" name="cors_origins" rows="2" placeholder="https://app.example.com"></textarea>
               </div>
               <label class="inline-flex items-center gap-2 text-sm text-ink">
                 <input type="checkbox" name="auto_register" checked class="rounded border-line text-brand focus:ring-brand" />

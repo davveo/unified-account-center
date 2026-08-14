@@ -147,7 +147,7 @@ func (s *AuthService) FinishSAML(ctx context.Context, meta RequestMeta, samlResp
 	if err != nil {
 		return nil, err
 	}
-	token, err := s.issueTokens(ctx, app, user, ClientInfo{}, meta)
+	token, err := s.issueTokens(ctx, app, user, ClientInfo{}, &meta)
 	if err != nil {
 		return nil, err
 	}

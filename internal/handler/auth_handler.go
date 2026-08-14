@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/davveo/unified-account-center/internal/middleware"
 	"github.com/davveo/unified-account-center/internal/pkg/errcode"
@@ -25,11 +26,14 @@ func (h *AuthHandler) meta(c *gin.Context) service.RequestMeta {
 	if cid == "" {
 		cid = c.GetHeader("X-Client-Id")
 	}
+	jti, _ := c.Get(middleware.CtxAccessJTI)
+	jtiStr, _ := jti.(string)
 	return service.RequestMeta{
 		ClientID:  cid,
 		IP:        c.ClientIP(),
 		UA:        c.Request.UserAgent(),
 		RequestID: c.GetString("request_id"),
+		JTI:       jtiStr,
 		DeviceID:  c.GetHeader("X-Device-Id"),
 	}
 }
@@ -239,6 +243,9 @@ func (h *AuthHandler) Introspect(c *gin.Context) {
 		if len(hAuth) > 7 {
 			token = hAuth[7:]
 		}
+		if token == "" {
+			token = c.Query("token")
+		}
 	} else {
 		var body struct {
 			Token string `json:"token"`
@@ -252,12 +259,43 @@ func (h *AuthHandler) Introspect(c *gin.Context) {
 			}
 		}
 	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		response.Fail(c, errcode.BadRequest, "缺少 token")
+		return
+	}
 	res, err := h.auth.Introspect(c.Request.Context(), token)
 	if err != nil {
 		response.FailErr(c, err)
 		return
 	}
 	response.OK(c, res)
+}
+
+// TokenCheck 网关旁路：与 introspect 相同，便于强退秒级生效。
+func (h *AuthHandler) TokenCheck(c *gin.Context) {
+	h.Introspect(c)
+}
+
+func (h *AuthHandler) ListNotifications(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	list, err := h.auth.ListNotifications(c.Request.Context(), uid.(string), limit)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list})
+}
+
+func (h *AuthHandler) MarkNotificationRead(c *gin.Context) {
+	uid, _ := c.Get(middleware.CtxUserID)
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err := h.auth.MarkNotificationRead(c.Request.Context(), uid.(string), id); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
 }
 
 func (h *AuthHandler) OAuthStart(c *gin.Context) {
