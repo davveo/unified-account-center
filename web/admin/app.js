@@ -5,7 +5,7 @@
     dashboard: ["运营概览", "登录成功率、OTP 发送量与刷短信告警"],
     apps: ["应用凭证", "创建 / 停用应用，查看 client_id / client_secret，轮换密钥"],
     tenants: ["租户管理", "租户列表 / 企业 SSO，页内 Tab 切换"],
-    channels: ["对接渠道", "登录方式 / 短信通道热更新"],
+    channels: ["对接渠道", "登录方式 / 短信通道 / JWT 签名钥"],
     users: ["用户管理", "用户列表 / 风控解锁"],
     invites: ["邀请 / 入驻", "邀请码 / 入驻审批 / 管理员建用户"],
     roles: ["角色权限", "轻量 RBAC：roles / scope 写入 JWT"],
@@ -485,6 +485,51 @@
     }
   }
 
+  async function loadJWTKeys() {
+    try {
+      const d = await api("/api/v1/admin/jwt-keys");
+      const dual = d.dual_key
+        ? `<span class="badge badge-ok">双钥生效</span>`
+        : `<span class="badge badge-warn">仅当前钥</span>`;
+      $("jwtKeysBox").innerHTML = `
+        <div class="text-sm space-y-1">
+          <div>算法：<span class="font-mono font-semibold">${escapeHtml(d.alg || "-")}</span> ${dual}</div>
+          <div>当前 kid（签名）：<span class="font-mono font-semibold">${escapeHtml(d.current_kid || "-")}</span></div>
+          <div>旧 kid（只验）：<span class="font-mono">${escapeHtml(d.previous_kid || "无")}</span></div>
+          <div class="text-xs text-mist">${escapeHtml(d.note || "")}</div>
+          <div class="text-xs text-mist font-mono break-all">curr=${escapeHtml(d.private_key_path || "-")} · prev=${escapeHtml(d.previous_private_key_path || "-")}</div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary" data-jwt="rotate">轮换签名钥</button>
+          <button type="button" class="btn btn-ghost" data-jwt="retire" ${d.previous_kid ? "" : "disabled"}>下线旧钥</button>
+        </div>`;
+      $("jwtKeysBox").querySelectorAll("[data-jwt]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          try {
+            if (btn.dataset.jwt === "rotate") {
+              const ok = await uiConfirm("确认轮换 JWT 签名钥？新 token 将使用新 kid；旧 token 在过期前仍可验签。", {
+                title: "轮换 JWT 签名钥",
+              });
+              if (!ok) return;
+              const data = await api("/api/v1/admin/jwt-keys/rotate", { method: "POST", body: "{}" });
+              toast(`已轮换：${data.current_kid}`);
+            } else {
+              const ok = await uiConfirm("确认下线旧钥？带旧 kid 的 Access Token 将立即验签失败。", {
+                title: "下线旧钥",
+              });
+              if (!ok) return;
+              await api("/api/v1/admin/jwt-keys/retire-previous", { method: "POST", body: "{}" });
+              toast("旧钥已下线");
+            }
+            loadJWTKeys();
+          } catch (e) { uiAlert(e.message); }
+        });
+      });
+    } catch (e) {
+      $("jwtKeysBox").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
+    }
+  }
+
   function auditQuery() {
     const user = encodeURIComponent(($("auditUser")?.value || "").trim());
     const action = encodeURIComponent(($("auditAction")?.value || "").trim());
@@ -564,6 +609,9 @@
         break;
       case "channels-sms":
         loadSMSChannel();
+        break;
+      case "channels-jwt":
+        loadJWTKeys();
         break;
       case "users-list":
         loadUsers();
@@ -1415,6 +1463,7 @@
   $("persistAudits")?.addEventListener("click", () => exportAudits(true));
   $("refreshDashboard")?.addEventListener("click", loadDashboard);
   $("refreshSMS")?.addEventListener("click", loadSMSChannel);
+  $("refreshJWTKeys")?.addEventListener("click", loadJWTKeys);
   $("refreshTenants")?.addEventListener("click", () => loadTenants({ reset: true }));
   $("refreshInvites")?.addEventListener("click", () => loadInvites({ reset: true }));
   $("refreshJoins")?.addEventListener("click", () => loadJoins({ reset: true }));

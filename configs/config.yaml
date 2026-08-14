@@ -31,6 +31,10 @@ jwt:
   private_key_path: "configs/keys/jwt_rsa.pem"
   public_key_path: "configs/keys/jwt_rsa_pub.pem"
   kid: "rsa-1"
+  # 双钥滚动（可选）：旧钥只验不签；管理端轮换后会自动写入 .prev 文件
+  # previous_kid: "rsa-0"
+  # previous_private_key_path: "configs/keys/jwt_rsa.prev.pem"
+  # previous_public_key_path: "configs/keys/jwt_rsa_pub.prev.pem"
 
 captcha:
   enabled: false

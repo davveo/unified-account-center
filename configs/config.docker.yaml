@@ -26,6 +26,7 @@ jwt:
   private_key_path: "/tmp/uac_jwt_rsa.pem"
   public_key_path: "/tmp/uac_jwt_rsa_pub.pem"
   kid: "rsa-1"
+  # previous_kid / previous_*_path 可选；热轮换后会自动写 .prev
 
 captcha:
   enabled: false

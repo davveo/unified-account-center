@@ -550,3 +550,32 @@ func (h *AdminHandler) UpdateSMSChannel(c *gin.Context) {
 	}
 	response.OK(c, res)
 }
+
+func (h *AdminHandler) GetJWTKeys(c *gin.Context) {
+	res, err := h.admin.GetJWTKeys(c.Request.Context())
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) RotateJWTKeys(c *gin.Context) {
+	var req service.RotateJWTKeysRequest
+	_ = c.ShouldBindJSON(&req)
+	res, err := h.admin.RotateJWTKeys(c.Request.Context(), req, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) RetireJWTPrevious(c *gin.Context) {
+	res, err := h.admin.RetireJWTPrevious(c.Request.Context(), adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}

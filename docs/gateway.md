@@ -114,6 +114,7 @@ location /api/ {
 
 - Access Token 的 `cid` 应与当前业务应用一致（可选强制）
 - 用户 logout / Admin 强退后，仅依赖 JWT 本地验签时需等待过期；强一致请 introspect 或维护 jti 黑名单查询
+- **双钥滚动**：轮换签名钥后 JWKS 可能同时包含当前 kid 与旧 kid；网关应按 token header 的 `kid` 选钥。旧钥只用于验签，新签发一律用当前 kid。管理端可在 Access TTL 过后再「下线旧钥」。
 
 ---
 

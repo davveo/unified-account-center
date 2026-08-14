@@ -214,6 +214,9 @@ func NewRouter(d Deps) *gin.Engine {
 		adminAuthed.GET("/exports/:filename", d.AdminHandler.DownloadExport)
 		adminAuthed.GET("/sms-channel", d.AdminHandler.GetSMSChannel)
 		adminAuthed.PUT("/sms-channel", d.AdminHandler.UpdateSMSChannel)
+		adminAuthed.GET("/jwt-keys", d.AdminHandler.GetJWTKeys)
+		adminAuthed.POST("/jwt-keys/rotate", d.AdminHandler.RotateJWTKeys)
+		adminAuthed.POST("/jwt-keys/retire-previous", d.AdminHandler.RetireJWTPrevious)
 	}
 
 	return r

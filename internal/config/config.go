@@ -29,17 +29,17 @@ type Config struct {
 }
 
 type RiskConfig struct {
-	LockAfterFailures      int    `yaml:"lock_after_failures"`       // 连续失败锁定阈值，0=10
-	LockWindowSec          int    `yaml:"lock_window_sec"`           // 失败计数窗口，0=900
-	LockDurationSec        int    `yaml:"lock_duration_sec"`         // 锁定时长，0=900
-	RequireMFAOnNewDevice  bool   `yaml:"require_mfa_on_new_device"` // 新设备强制 MFA（若已启用）
-	AlertWebhookURL        string `yaml:"alert_webhook_url"`         // 发码熔断等运营告警
+	LockAfterFailures     int    `yaml:"lock_after_failures"`       // 连续失败锁定阈值，0=10
+	LockWindowSec         int    `yaml:"lock_window_sec"`           // 失败计数窗口，0=900
+	LockDurationSec       int    `yaml:"lock_duration_sec"`         // 锁定时长，0=900
+	RequireMFAOnNewDevice bool   `yaml:"require_mfa_on_new_device"` // 新设备强制 MFA（若已启用）
+	AlertWebhookURL       string `yaml:"alert_webhook_url"`         // 发码熔断等运营告警
 }
 
 type WebAuthnConfig struct {
 	RPDisplayName string   `yaml:"rp_display_name"`
-	RPID          string   `yaml:"rp_id"`          // localhost / example.com
-	RPOrigins     []string `yaml:"rp_origins"`     // https://app.example.com
+	RPID          string   `yaml:"rp_id"`      // localhost / example.com
+	RPOrigins     []string `yaml:"rp_origins"` // https://app.example.com
 }
 
 type AdminConfig struct {
@@ -78,6 +78,10 @@ type JWTConfig struct {
 	PrivateKeyPath string `yaml:"private_key_path"`
 	PublicKeyPath  string `yaml:"public_key_path"`
 	Kid            string `yaml:"kid"`
+	// 双钥滚动：旧钥只验不签（可选；也可由管理端轮换后自动落盘）
+	PreviousKid            string `yaml:"previous_kid"`
+	PreviousPrivateKeyPath string `yaml:"previous_private_key_path"`
+	PreviousPublicKeyPath  string `yaml:"previous_public_key_path"`
 }
 
 type CaptchaConfig struct {
@@ -96,17 +100,17 @@ func (c JWTConfig) RefreshDuration() time.Duration {
 }
 
 type OTPConfig struct {
-	Length               int `yaml:"length"`
-	TTL                  int `yaml:"ttl"`
-	ResendInterval       int `yaml:"resend_interval"`
-	MaxTries             int `yaml:"max_tries"`
+	Length                int `yaml:"length"`
+	TTL                   int `yaml:"ttl"`
+	ResendInterval        int `yaml:"resend_interval"`
+	MaxTries              int `yaml:"max_tries"`
 	DailyLimitPerIdentity int `yaml:"daily_limit_per_identity"` // 单日单身份发码上限，0=20
-	DailyLimitPerIP      int `yaml:"daily_limit_per_ip"`       // 单日单 IP 发码上限，0=50
+	DailyLimitPerIP       int `yaml:"daily_limit_per_ip"`       // 单日单 IP 发码上限，0=50
 }
 
 type PasswordConfig struct {
-	MinLength            int  `yaml:"min_length"`
-	RequireLetterNumber  bool `yaml:"require_letter_number"`
+	MinLength           int  `yaml:"min_length"`
+	RequireLetterNumber bool `yaml:"require_letter_number"`
 }
 
 type MQConfig struct {
@@ -140,12 +144,12 @@ type OAuthConfig struct {
 }
 
 type BootstrapConfig struct {
-	CreateDefaultApp       bool     `yaml:"create_default_app"`
-	DefaultClientID        string   `yaml:"default_client_id"`
-	DefaultClientSecret    string   `yaml:"default_client_secret"`
-	DefaultAllowedMethods  []string `yaml:"default_allowed_methods"`
-	DefaultRedirectURIs    []string `yaml:"default_redirect_uris"`
-	AutoRegister           bool     `yaml:"auto_register"`
+	CreateDefaultApp      bool     `yaml:"create_default_app"`
+	DefaultClientID       string   `yaml:"default_client_id"`
+	DefaultClientSecret   string   `yaml:"default_client_secret"`
+	DefaultAllowedMethods []string `yaml:"default_allowed_methods"`
+	DefaultRedirectURIs   []string `yaml:"default_redirect_uris"`
+	AutoRegister          bool     `yaml:"auto_register"`
 }
 
 func Load(path string) (*Config, error) {

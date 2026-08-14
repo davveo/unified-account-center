@@ -168,7 +168,7 @@
 ### 15. 密钥与轮换运营
 
 - [ ] Admin token / Client secret 进 KMS 或环境变量
-- [ ] JWT `kid` 双钥滚动（旧钥只验不签）
+- [x] JWT `kid` 双钥滚动（旧钥只验不签）
 - [x] 短信 / OAuth 密钥热更新
 - [x] 密钥轮换操作审计
 
@@ -247,4 +247,5 @@ P3（已部分落地）入口速览：
 - Dashboard：`GET /api/v1/admin/dashboard`；后台「运营概览」
 - 审计导出：`GET /api/v1/admin/audits/export`（`persist=1` 写本地对象存储）
 - 短信热更新：`PUT /api/v1/admin/sms-channel`
-- 轮换/查看密钥审计：`admin_rotate_secret` / `admin_reveal_secret`
+- JWT 双钥滚动：`GET/POST /api/v1/admin/jwt-keys`（`rotate` / `retire-previous`）
+- 轮换/查看密钥审计：`admin_rotate_secret` / `admin_reveal_secret` / `admin_rotate_jwt_keys`

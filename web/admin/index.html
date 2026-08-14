@@ -228,6 +228,7 @@
         <div class="subtabs" role="tablist">
           <button type="button" class="subtab active" data-subtab="channels-list" role="tab">登录方式</button>
           <button type="button" class="subtab" data-subtab="channels-sms" role="tab">短信通道</button>
+          <button type="button" class="subtab" data-subtab="channels-jwt" role="tab">JWT 签名钥</button>
         </div>
         <div class="subpanel active" data-subpanel="channels-list">
           <article class="panel">
@@ -244,6 +245,16 @@
             </div>
             <p class="mt-2 text-sm text-mist">无需重启即可在 mock / mq 之间切换短信发送实现。</p>
             <div id="smsChannelBox" class="mt-4 space-y-3">加载中…</div>
+          </article>
+        </div>
+        <div class="subpanel" data-subpanel="channels-jwt">
+          <article class="panel">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <h2 class="panel-title">JWT kid 双钥滚动</h2>
+              <button id="refreshJWTKeys" type="button" class="btn btn-ghost">刷新</button>
+            </div>
+            <p class="mt-2 text-sm text-mist">RS256 轮换时新钥负责签名，旧钥只验不签；JWKS 会同时公布两把公钥。Access 自然过期后可下线旧钥。</p>
+            <div id="jwtKeysBox" class="mt-4 space-y-3">加载中…</div>
           </article>
         </div>
       </section>

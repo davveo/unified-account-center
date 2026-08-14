@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -144,7 +145,49 @@ func buildJWT(cfg *config.Config) (*jwtutil.Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jwt rsa: %w", err)
 	}
-	return jwtutil.NewRSAManager(key, cfg.JWT.Issuer, cfg.JWT.Kid), nil
+	kid := cfg.JWT.Kid
+	if k := jwtutil.ReadKidFile(cfg.JWT.PrivateKeyPath); k != "" {
+		kid = k
+	}
+	mgr := jwtutil.NewRSAManager(key, cfg.JWT.Issuer, kid)
+	_ = jwtutil.WriteKidFile(cfg.JWT.PrivateKeyPath, kid)
+
+	prevPrivPath := cfg.JWT.PreviousPrivateKeyPath
+	prevPubPath := cfg.JWT.PreviousPublicKeyPath
+	if prevPrivPath == "" {
+		prevPrivPath = jwtutil.SiblingPrevPath(cfg.JWT.PrivateKeyPath)
+	}
+	if prevPubPath == "" {
+		prevPubPath = jwtutil.SiblingPrevPath(cfg.JWT.PublicKeyPath)
+	}
+	var prevPriv *rsa.PrivateKey
+	var prevPub *rsa.PublicKey
+	if prevPrivPath != "" {
+		if k, err := jwtutil.LoadRSAPrivateKey(prevPrivPath); err == nil {
+			prevPriv = k
+			prevPub = &k.PublicKey
+		}
+	}
+	if prevPub == nil && prevPubPath != "" {
+		if k, err := jwtutil.LoadRSAPublicKey(prevPubPath); err == nil {
+			prevPub = k
+		}
+	}
+	if prevPub != nil {
+		prevKid := cfg.JWT.PreviousKid
+		if k := jwtutil.ReadKidFile(prevPrivPath); k != "" {
+			prevKid = k
+		} else if k := jwtutil.ReadKidFile(prevPubPath); k != "" {
+			prevKid = k
+		}
+		if prevKid == "" {
+			prevKid = kid + "-prev"
+		}
+		if err := mgr.SetPreviousRSA(prevPub, prevKid, prevPriv); err != nil {
+			return nil, fmt.Errorf("jwt previous key: %w", err)
+		}
+	}
+	return mgr, nil
 }
 
 func dirOf(path string) string {

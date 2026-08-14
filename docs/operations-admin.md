@@ -264,7 +264,7 @@ Prometheus：`GET /metrics`（含 `uac_login_total`、`uac_otp_sent_total`、`ua
 
 ---
 
-## 13. 短信 / OAuth 热更新
+## 13. 短信 / OAuth / JWT 热更新
 
 ### OAuth Provider
 
@@ -279,6 +279,23 @@ GET /api/v1/admin/sms-channel
 PUT /api/v1/admin/sms-channel
 {"provider":"mock"}
 ```
+
+### JWT kid 双钥滚动
+
+**对接渠道 → JWT 签名钥**（仅 RS256）：
+
+1. **轮换签名钥**：生成新 RSA 钥并立即用于签发；旧钥降为 previous，**只验不签**；JWKS 同时公布两把公钥。
+2. **下线旧钥**：Access 过期窗口结束后执行；带旧 kid 的 token 将立即验签失败。
+
+密钥落盘到 `jwt.private_key_path` / `.prev` 旁路文件，并写入 `*.kid` 记录 kid，重启后自动恢复双钥状态。
+
+```http
+GET  /api/v1/admin/jwt-keys
+POST /api/v1/admin/jwt-keys/rotate
+POST /api/v1/admin/jwt-keys/retire-previous
+```
+
+审计：`admin_rotate_jwt_keys` / `admin_retire_jwt_previous`。
 
 ### 密钥轮换审计
 
