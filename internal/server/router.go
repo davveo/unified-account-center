@@ -11,6 +11,8 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
 	"github.com/davveo/unified-account-center/internal/pkg/observability"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
+	"github.com/davveo/unified-account-center/internal/pkg/tracing"
+	"github.com/davveo/unified-account-center/internal/repository"
 	"github.com/davveo/unified-account-center/internal/service"
 	"github.com/davveo/unified-account-center/web"
 	"github.com/gin-gonic/gin"
@@ -24,6 +26,7 @@ type Deps struct {
 	JWT          *jwtutil.Manager
 	Redis        *redisx.Client
 	DB           *gorm.DB
+	Repos        *repository.Repos
 	AdminToken   string
 	Mode         string
 }
@@ -33,9 +36,17 @@ func NewRouter(d Deps) *gin.Engine {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
-	r.Use(gin.Recovery(), observability.Middleware(), middleware.RequestID())
+	r.Use(gin.Recovery(), tracing.Middleware(), observability.Middleware(), middleware.RequestID())
+	if d.Repos != nil {
+		r.Use(middleware.CORS(d.Repos))
+	}
 
+	// liveness：进程存活即可
 	r.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"status": "up"}})
+	})
+	// readiness：依赖深检
+	r.GET("/readyz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 		status := "up"
@@ -43,7 +54,7 @@ func NewRouter(d Deps) *gin.Engine {
 		if d.DB != nil {
 			sqlDB, err := d.DB.DB()
 			if err != nil || sqlDB.PingContext(ctx) != nil {
-				status = "degraded"
+				status = "down"
 				checks["mysql"] = "down"
 			} else {
 				checks["mysql"] = "up"
@@ -51,7 +62,7 @@ func NewRouter(d Deps) *gin.Engine {
 		}
 		if d.Redis != nil {
 			if err := d.Redis.Ping(ctx); err != nil {
-				status = "degraded"
+				status = "down"
 				checks["redis"] = "down"
 			} else {
 				checks["redis"] = "up"
@@ -73,6 +84,22 @@ func NewRouter(d Deps) *gin.Engine {
 	r.GET("/.well-known/openid-configuration", d.AuthHandler.OpenIDConfiguration)
 	r.GET("/api/v1/auth/jwks", func(c *gin.Context) {
 		c.JSON(http.StatusOK, d.JWT.JWKS())
+	})
+	r.GET("/openapi.yaml", func(c *gin.Context) {
+		data, err := web.OpenAPIYAML()
+		if err != nil {
+			c.String(http.StatusInternalServerError, "openapi missing")
+			return
+		}
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", data)
+	})
+	r.GET("/docs", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!doctype html><html><head><title>UAC API Docs</title>
+<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/></head>
+<body><div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>SwaggerUIBundle({url:'/openapi.yaml',dom_id:'#swagger-ui'})</script>
+</body></html>`))
 	})
 
 	adminStatic, err := fs.Sub(web.AdminFS, "admin")
@@ -102,6 +129,20 @@ func NewRouter(d Deps) *gin.Engine {
 		r.StaticFS("/hosted/static", http.FS(hostedStatic))
 	}
 
+	accountStatic, err := fs.Sub(web.AccountFS, "account")
+	if err == nil {
+		r.GET("/account", func(c *gin.Context) { c.Redirect(http.StatusFound, "/account/") })
+		r.GET("/account/", func(c *gin.Context) {
+			data, err := fs.ReadFile(accountStatic, "index.html")
+			if err != nil {
+				c.String(http.StatusInternalServerError, "account page missing")
+				return
+			}
+			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+		})
+		r.StaticFS("/account/static", http.FS(accountStatic))
+	}
+
 	// 托管登录配置（仅需 client_id）
 	r.GET("/api/v1/auth/hosted/config", d.AuthHandler.HostedConfig)
 
@@ -123,6 +164,8 @@ func NewRouter(d Deps) *gin.Engine {
 			pub.POST("/mfa/complete", d.AuthHandler.MFAComplete)
 			pub.POST("/passkey/login/begin", d.AuthHandler.PasskeyLoginBegin)
 			pub.POST("/passkey/login/finish", d.AuthHandler.PasskeyLoginFinish)
+			pub.GET("/saml/start", d.AuthHandler.SAMLStart)
+			pub.POST("/saml/acs", d.AuthHandler.SAMLACS)
 		}
 
 		serverAPI := v1.Group("")
@@ -217,6 +260,11 @@ func NewRouter(d Deps) *gin.Engine {
 		adminAuthed.GET("/jwt-keys", d.AdminHandler.GetJWTKeys)
 		adminAuthed.POST("/jwt-keys/rotate", d.AdminHandler.RotateJWTKeys)
 		adminAuthed.POST("/jwt-keys/retire-previous", d.AdminHandler.RetireJWTPrevious)
+		adminAuthed.GET("/webhooks", d.AdminHandler.ListWebhooks)
+		adminAuthed.POST("/webhooks", d.AdminHandler.CreateWebhook)
+		adminAuthed.PATCH("/webhooks/:id", d.AdminHandler.UpdateWebhook)
+		adminAuthed.DELETE("/webhooks/:id", d.AdminHandler.DeleteWebhook)
+		adminAuthed.GET("/webhooks/deliveries", d.AdminHandler.ListWebhookDeliveries)
 	}
 
 	return r

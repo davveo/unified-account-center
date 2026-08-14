@@ -389,6 +389,15 @@ func (r *auditRepo) List(ctx context.Context, filter AuditFilter) ([]model.Audit
 	if filter.Action != "" {
 		q = q.Where("action = ?", filter.Action)
 	}
+	if filter.RequestID != "" {
+		q = q.Where("request_id = ?", filter.RequestID)
+	}
+	if filter.JTI != "" {
+		q = q.Where("jti = ?", filter.JTI)
+	}
+	if filter.DeviceID != "" {
+		q = q.Where("device_id = ?", filter.DeviceID)
+	}
 	if filter.Success != nil {
 		q = q.Where("success = ?", *filter.Success)
 	}

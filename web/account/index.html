@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>账户中心</title>
+  <link rel="stylesheet" href="/account/static/style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>账户自助中心</h1>
+    <p class="hint">粘贴 Access Token 与 Client ID 后管理会话 / MFA / 资料（调用现有 API）。</p>
+    <label>Client ID <input id="clientId" value="app_demo" /></label>
+    <label>Access Token <textarea id="token" rows="3" placeholder="Bearer access token"></textarea></label>
+    <div class="actions">
+      <button id="btnMe" type="button">刷新资料</button>
+      <button id="btnSessions" type="button">列出会话</button>
+      <button id="btnMFA" type="button">MFA 状态</button>
+      <button id="btnRevokeOthers" type="button">退出其他设备</button>
+    </div>
+    <pre id="out">等待操作…</pre>
+  </main>
+  <script src="/account/static/app.js"></script>
+</body>
+</html>

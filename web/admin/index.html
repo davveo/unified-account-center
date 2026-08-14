@@ -107,6 +107,7 @@
           <button type="button" class="nav-item" data-view="invites">邀请 / 入驻</button>
           <button type="button" class="nav-item" data-view="roles">角色权限</button>
           <button type="button" class="nav-item" data-view="audits">审计日志</button>
+          <button type="button" class="nav-item" data-view="webhooks">Webhook</button>
           <button type="button" class="nav-item" data-view="playground">渠道测试</button>
         </nav>
 
@@ -359,6 +360,9 @@
             <div class="flex flex-wrap items-center gap-2">
               <input id="auditUser" class="input w-36" placeholder="user_id" />
               <input id="auditAction" class="input w-32" placeholder="action" />
+              <input id="auditRequestId" class="input w-36" placeholder="request_id" />
+              <input id="auditJti" class="input w-36" placeholder="jti" />
+              <input id="auditDeviceId" class="input w-36" placeholder="device_id" />
               <input id="auditFrom" class="input w-36" type="date" title="from" />
               <input id="auditTo" class="input w-36" type="date" title="to" />
               <button id="refreshAudits" type="button" class="btn btn-ghost">查询</button>
@@ -367,6 +371,29 @@
             </div>
           </div>
           <div id="auditsTable" class="mt-4 overflow-x-auto">加载中…</div>
+        </article>
+      </section>
+
+      <!-- Webhooks -->
+      <section id="view-webhooks" class="view space-y-4">
+        <article class="panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="panel-title">出站 Webhook</h2>
+            <button id="refreshWebhooks" type="button" class="btn btn-ghost">刷新</button>
+          </div>
+          <p class="mt-2 text-sm text-mist">事件含 HMAC 签名（X-UAC-Signature），失败自动重试，超过次数进入死信。</p>
+          <form id="webhookForm" class="mt-4 grid gap-2 sm:grid-cols-2">
+            <input name="name" class="input" placeholder="名称" required />
+            <input name="url" class="input" placeholder="https://example.com/hook" required />
+            <input name="secret" class="input" placeholder="签名密钥（可空自动生成）" />
+            <input name="events" class="input" placeholder="事件，逗号分隔，空=全部" />
+            <button type="submit" class="btn btn-primary sm:col-span-2">创建订阅</button>
+          </form>
+          <div id="webhooksTable" class="mt-4">加载中…</div>
+        </article>
+        <article class="panel">
+          <h2 class="panel-title">投递记录</h2>
+          <div id="webhookDeliveries" class="mt-4">加载中…</div>
         </article>
       </section>
 

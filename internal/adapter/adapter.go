@@ -12,13 +12,18 @@ type EmailSender interface {
 	SendOTP(ctx context.Context, email, code, scene string) error
 }
 
+// Mailer 通用邮件（登录通知等）。
+type Mailer interface {
+	SendMail(ctx context.Context, to, subject, body string) error
+}
+
 // OAuthUserInfo 第三方用户信息。
 type OAuthUserInfo struct {
-	Subject  string
-	Name     string
-	Avatar   string
-	Email    string
-	RawJSON  string
+	Subject string
+	Name    string
+	Avatar  string
+	Email   string
+	RawJSON string
 }
 
 // OAuthProvider 第三方 OAuth 适配器。

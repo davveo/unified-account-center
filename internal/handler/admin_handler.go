@@ -171,12 +171,15 @@ func (h *AdminHandler) ListAudits(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	filter := repository.AuditFilter{
-		TenantID: c.Query("tenant_id"),
-		ClientID: c.Query("client_id"),
-		UserID:   c.Query("user_id"),
-		Action:   c.Query("action"),
-		Limit:    limit,
-		Offset:   offset,
+		TenantID:  c.Query("tenant_id"),
+		ClientID:  c.Query("client_id"),
+		UserID:    c.Query("user_id"),
+		Action:    c.Query("action"),
+		RequestID: c.Query("request_id"),
+		JTI:       c.Query("jti"),
+		DeviceID:  c.Query("device_id"),
+		Limit:     limit,
+		Offset:    offset,
 	}
 	if v := c.Query("success"); v == "true" || v == "false" {
 		b := v == "true"
@@ -578,4 +581,63 @@ func (h *AdminHandler) RetireJWTPrevious(c *gin.Context) {
 		return
 	}
 	response.OK(c, res)
+}
+
+func (h *AdminHandler) ListWebhooks(c *gin.Context) {
+	list, err := h.admin.ListWebhooks(c.Request.Context())
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list})
+}
+
+func (h *AdminHandler) CreateWebhook(c *gin.Context) {
+	var req service.UpsertWebhookRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.admin.CreateWebhook(c.Request.Context(), req, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) UpdateWebhook(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var req service.UpsertWebhookRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, errcode.BadRequest, "参数错误")
+		return
+	}
+	res, err := h.admin.UpdateWebhook(c.Request.Context(), id, req, adminActor(c))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AdminHandler) DeleteWebhook(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err := h.admin.DeleteWebhook(c.Request.Context(), id, adminActor(c)); err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"ok": true})
+}
+
+func (h *AdminHandler) ListWebhookDeliveries(c *gin.Context) {
+	epID, _ := strconv.ParseUint(c.Query("endpoint_id"), 10, 64)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	list, total, err := h.admin.ListWebhookDeliveries(c.Request.Context(), epID, c.Query("status"), limit, offset)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": list, "total": total})
 }

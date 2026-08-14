@@ -19,6 +19,7 @@ type UpdateAppRequest struct {
 	Status         *string  `json:"status"` // active | disabled
 	AllowedMethods []string `json:"allowed_methods"`
 	RedirectURIs   []string `json:"redirect_uris"`
+	CORSOrigins    []string `json:"cors_origins"`
 	OAuthProviders []string `json:"oauth_providers"`
 	AutoRegister   *bool    `json:"auto_register"`
 	RequirePKCE    *bool    `json:"require_pkce"`
@@ -58,6 +59,9 @@ func (s *AdminService) UpdateApp(ctx context.Context, clientID string, req Updat
 	}
 	if req.RedirectURIs != nil {
 		app.RedirectURIs = req.RedirectURIs
+	}
+	if req.CORSOrigins != nil {
+		app.CORSOrigins = req.CORSOrigins
 	}
 	if req.OAuthProviders != nil {
 		app.OAuthProviders = req.OAuthProviders
@@ -175,6 +179,11 @@ func (s *AdminService) SetUserStatus(ctx context.Context, userID, status string)
 	}
 	if status == model.UserStatusDisabled {
 		_ = s.repos.Refresh.RevokeAllByUser(ctx, userID, "", time.Now())
+		if s.webhookBus != nil {
+			s.webhookBus.Emit(ctx, model.EventUserDisabled, user.TenantID, "", userID, map[string]interface{}{"status": status})
+		}
+	} else if s.webhookBus != nil {
+		s.webhookBus.Emit(ctx, model.EventUserEnabled, user.TenantID, "", userID, map[string]interface{}{"status": status})
 	}
 	return &UserAdminView{
 		UserID: user.UserID, TenantID: user.TenantID, DisplayName: user.DisplayName,
@@ -205,6 +214,9 @@ type AuditView struct {
 	Detail    string `json:"detail"`
 	IP        string `json:"ip"`
 	UA        string `json:"ua"`
+	RequestID string `json:"request_id,omitempty"`
+	JTI       string `json:"jti,omitempty"`
+	DeviceID  string `json:"device_id,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -218,6 +230,7 @@ func (s *AdminService) ListAudits(ctx context.Context, filter repository.AuditFi
 		out = append(out, AuditView{
 			ID: a.ID, TenantID: a.TenantID, ClientID: a.ClientID, UserID: a.UserID,
 			Action: a.Action, Success: a.Success, Detail: a.Detail, IP: a.IP, UA: a.UA,
+			RequestID: a.RequestID, JTI: a.JTI, DeviceID: a.DeviceID,
 			CreatedAt: a.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}

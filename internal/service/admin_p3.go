@@ -23,11 +23,20 @@ import (
 const settingKeySMSProvider = "sms.provider"
 
 type DashboardSummary struct {
-	Process       observability.Snapshot `json:"process"`
-	Audit24h      DashboardAuditStats    `json:"audit_24h"`
-	SMSAlerts     []DashboardAlert       `json:"sms_alerts"`
-	SMSProvider   string                 `json:"sms_provider"`
-	GeneratedAt   string                 `json:"generated_at"`
+	Process     observability.Snapshot `json:"process"`
+	Audit24h    DashboardAuditStats    `json:"audit_24h"`
+	SMSAlerts   []DashboardAlert       `json:"sms_alerts"`
+	SMSProvider string                 `json:"sms_provider"`
+	Quota       DashboardQuota         `json:"quota"`
+	GeneratedAt string                 `json:"generated_at"`
+}
+
+type DashboardQuota struct {
+	TenantID      string `json:"tenant_id,omitempty"`
+	AppsUsed      int64  `json:"apps_used"`
+	AppsMax       int    `json:"apps_max"`
+	OTPToday      int64  `json:"otp_today"`
+	OTPDailyLimit int    `json:"otp_daily_limit"`
 }
 
 type DashboardAuditStats struct {
@@ -55,13 +64,30 @@ func (s *AdminService) Dashboard(ctx context.Context) (*DashboardSummary, error)
 	}
 	alerts, _ := s.recentSMSAlerts(ctx, since, 20)
 	provider := s.currentSMSProvider()
+	quota := s.dashboardQuota(ctx, "default")
 	return &DashboardSummary{
 		Process:     snap,
 		Audit24h:    stats,
 		SMSAlerts:   alerts,
 		SMSProvider: provider,
+		Quota:       quota,
 		GeneratedAt: time.Now().Format(time.RFC3339),
 	}, nil
+}
+
+func (s *AdminService) dashboardQuota(ctx context.Context, tenantID string) DashboardQuota {
+	q := DashboardQuota{TenantID: tenantID, AppsMax: 20, OTPDailyLimit: 5000}
+	if t, _ := s.repos.Tenant.FindByTenantID(ctx, tenantID); t != nil {
+		q.AppsMax = t.MaxApps
+		q.OTPDailyLimit = t.DailyOTPLimit
+	}
+	_, total, _ := s.repos.App.List(ctx, tenantID, 1, 0)
+	q.AppsUsed = total
+	dayStart := time.Now().Truncate(24 * time.Hour)
+	_ = s.repos.DB.WithContext(ctx).Model(&model.AuditLog{}).
+		Where("created_at >= ? AND action = ? AND success = ?", dayStart, "challenge", true).
+		Count(&q.OTPToday)
+	return q
 }
 
 func (s *AdminService) auditStatsSince(ctx context.Context, since time.Time) (DashboardAuditStats, error) {

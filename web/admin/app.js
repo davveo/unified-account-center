@@ -10,6 +10,7 @@
     invites: ["邀请 / 入驻", "邀请码 / 入驻审批 / 管理员建用户"],
     roles: ["角色权限", "轻量 RBAC：roles / scope 写入 JWT"],
     audits: ["审计日志", "查询与导出登录 / 绑定 / 密钥操作记录"],
+    webhooks: ["Webhook", "出站事件订阅、签名校验与死信投递"],
     playground: ["渠道测试", "用真实接口联调验证码 / 密码 / OAuth 登录"],
   };
 
@@ -411,6 +412,8 @@
         ["OTP 发送量", String(p.otp_sent || 0), "进程累计"],
         ["刷短信告警", String(p.otp_limit_hits || 0), "日限额命中"],
         ["短信通道", d.sms_provider || "-", "热更新可用"],
+        ["应用配额", `${(d.quota && d.quota.apps_used) || 0}/${(d.quota && d.quota.apps_max) || "-"}`, "租户 default"],
+        ["今日发码", `${(d.quota && d.quota.otp_today) || 0}/${(d.quota && d.quota.otp_daily_limit) || "-"}`, "租户日限"],
       ].map(([t, v, s]) => `
         <article class="panel">
           <div class="text-xs font-medium uppercase tracking-wide text-mist">${escapeHtml(t)}</div>
@@ -533,9 +536,53 @@
   function auditQuery() {
     const user = encodeURIComponent(($("auditUser")?.value || "").trim());
     const action = encodeURIComponent(($("auditAction")?.value || "").trim());
+    const requestId = encodeURIComponent(($("auditRequestId")?.value || "").trim());
+    const jti = encodeURIComponent(($("auditJti")?.value || "").trim());
+    const deviceId = encodeURIComponent(($("auditDeviceId")?.value || "").trim());
     const from = encodeURIComponent(($("auditFrom")?.value || "").trim());
     const to = encodeURIComponent(($("auditTo")?.value || "").trim());
-    return `user_id=${user}&action=${action}&from=${from}&to=${to}`;
+    return `user_id=${user}&action=${action}&request_id=${requestId}&jti=${jti}&device_id=${deviceId}&from=${from}&to=${to}`;
+  }
+
+  async function loadWebhooks() {
+    try {
+      const d = await api("/api/v1/admin/webhooks");
+      const items = d.items || [];
+      $("webhooksTable").innerHTML = items.length
+        ? `<table class="table"><thead><tr><th>名称</th><th>URL</th><th>事件</th><th>状态</th><th></th></tr></thead><tbody>
+          ${items.map((w) => `<tr>
+            <td>${escapeHtml(w.name)}</td>
+            <td class="font-mono text-xs">${escapeHtml(w.url)}</td>
+            <td class="text-xs">${escapeHtml((w.events || []).join(",") || "*")}</td>
+            <td>${w.enabled ? "启用" : "停用"}</td>
+            <td><button type="button" class="btn btn-ghost btn-xs" data-del-wh="${w.id}">删除</button></td>
+          </tr>`).join("")}
+        </tbody></table>`
+        : `<div class="text-sm text-mist">暂无订阅</div>`;
+      $("webhooksTable").querySelectorAll("[data-del-wh]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!(await uiConfirm("删除该 Webhook？"))) return;
+          await api(`/api/v1/admin/webhooks/${btn.dataset.delWh}`, { method: "DELETE" });
+          toast("已删除");
+          loadWebhooks();
+        });
+      });
+      const del = await api("/api/v1/admin/webhooks/deliveries?limit=20");
+      const rows = del.items || [];
+      $("webhookDeliveries").innerHTML = rows.length
+        ? `<table class="table"><thead><tr><th>事件</th><th>状态</th><th>尝试</th><th>HTTP</th><th>错误</th></tr></thead><tbody>
+          ${rows.map((r) => `<tr>
+            <td class="font-mono text-xs">${escapeHtml(r.event_type)}</td>
+            <td>${escapeHtml(r.status)}</td>
+            <td>${r.attempts}</td>
+            <td>${r.last_http_status || "-"}</td>
+            <td class="text-xs">${escapeHtml(r.last_error || "")}</td>
+          </tr>`).join("")}
+        </tbody></table>`
+        : `<div class="text-sm text-mist">暂无投递</div>`;
+    } catch (e) {
+      $("webhooksTable").innerHTML = `<div class="result warn">${escapeHtml(e.message)}</div>`;
+    }
   }
 
   async function exportAudits(persist) {
@@ -652,6 +699,7 @@
     if (name === "playground") preparePlayground();
     if (name === "apps") loadApps();
     if (name === "audits") loadAudits();
+    if (name === "webhooks") loadWebhooks();
     if (name === "roles") loadRoles();
   }
 
@@ -1461,6 +1509,26 @@
   $("refreshAudits")?.addEventListener("click", () => loadAudits({ reset: true }));
   $("exportAudits")?.addEventListener("click", () => exportAudits(false));
   $("persistAudits")?.addEventListener("click", () => exportAudits(true));
+  $("refreshWebhooks")?.addEventListener("click", loadWebhooks);
+  $("webhookForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const events = String(fd.get("events") || "").split(",").map((x) => x.trim()).filter(Boolean);
+    try {
+      await api("/api/v1/admin/webhooks", {
+        method: "POST",
+        body: JSON.stringify({
+          name: fd.get("name"),
+          url: fd.get("url"),
+          secret: fd.get("secret") || undefined,
+          events,
+        }),
+      });
+      toast("Webhook 已创建");
+      e.target.reset();
+      loadWebhooks();
+    } catch (err) { uiAlert(err.message); }
+  });
   $("refreshDashboard")?.addEventListener("click", loadDashboard);
   $("refreshSMS")?.addEventListener("click", loadSMSChannel);
   $("refreshJWTKeys")?.addEventListener("click", loadJWTKeys);

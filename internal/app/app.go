@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/davveo/unified-account-center/internal/adapter"
 	"github.com/davveo/unified-account-center/internal/adapter/captcha"
@@ -22,6 +23,7 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
 	"github.com/davveo/unified-account-center/internal/pkg/observability"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
+	"github.com/davveo/unified-account-center/internal/pkg/webhook"
 	"github.com/davveo/unified-account-center/internal/repository"
 	"github.com/davveo/unified-account-center/internal/server"
 	"github.com/davveo/unified-account-center/internal/service"
@@ -32,12 +34,13 @@ import (
 )
 
 type Application struct {
-	Cfg    *config.Config
-	DB     *gorm.DB
-	Redis  *redisx.Client
-	MQ     mq.Producer
-	Router *gin.Engine
-	JWT    *jwtutil.Manager
+	Cfg        *config.Config
+	DB         *gorm.DB
+	Redis      *redisx.Client
+	MQ         mq.Producer
+	Router     *gin.Engine
+	JWT        *jwtutil.Manager
+	WebhookBus *webhook.Bus
 }
 
 func New(cfg *config.Config) (*Application, error) {
@@ -67,12 +70,18 @@ func New(cfg *config.Config) (*Application, error) {
 
 	var baseSMS adapter.SMSSender = sms.NewMock()
 	var emailSender adapter.EmailSender = email.NewMock()
-	if cfg.SMS.Provider == "mq" {
+	switch strings.ToLower(cfg.SMS.Provider) {
+	case "mq":
 		baseSMS = sms.NewMQ(producer, cfg.MQ.SMSTopic)
+	case "aliyun", "tencent":
+		baseSMS = sms.NewCloud(cfg.SMS.Provider, cfg.SMS)
 	}
 	smsHot := sms.NewHot(baseSMS)
-	if cfg.Email.Provider == "mq" {
+	switch strings.ToLower(cfg.Email.Provider) {
+	case "mq":
 		emailSender = email.NewMQ(producer, cfg.MQ.EmailTopic)
+	case "aliyun", "tencent":
+		emailSender = email.NewCloud(cfg.Email.Provider, cfg.Email)
 	}
 	var captchaVerifier captcha.Verifier = captcha.NewFromConfig(cfg.Captcha)
 
@@ -101,13 +110,21 @@ func New(cfg *config.Config) (*Application, error) {
 		authenticator.NewOAuth2(oauthReg),
 	)
 
+	whBus := webhook.NewBus(db)
+	whBus.Start()
+
 	authSvc := service.NewAuthService(cfg, repos, auths, jwtMgr, rdb)
 	oauthSvc := service.NewOAuthService(repos, oauthReg, authSvc, rdb)
 	authSvc.SetOAuth(oauthSvc)
+	authSvc.SetWebhookBus(whBus)
+	if m, ok := emailSender.(adapter.Mailer); ok {
+		authSvc.SetMailer(m)
+	}
 	adminSvc := service.NewAdminService(cfg, repos, oauthReg, rdb)
 	adminSvc.SetJWT(jwtMgr)
 	adminSvc.SetSMSHot(smsHot)
 	adminSvc.SetMQProducer(producer)
+	adminSvc.SetWebhookBus(whBus)
 	adminSvc.RestoreSMSChannel(context.Background())
 	_ = adminSvc.EnsureDefaultTenant(context.Background())
 	h := handler.NewAuthHandler(authSvc, oauthSvc)
@@ -120,17 +137,19 @@ func New(cfg *config.Config) (*Application, error) {
 		JWT:          jwtMgr,
 		Redis:        rdb,
 		DB:           db,
+		Repos:        repos,
 		AdminToken:   cfg.Admin.Token,
 		Mode:         cfg.Server.Mode,
 	})
 
 	return &Application{
-		Cfg:    cfg,
-		DB:     db,
-		Redis:  rdb,
-		MQ:     producer,
-		Router: router,
-		JWT:    jwtMgr,
+		Cfg:        cfg,
+		DB:         db,
+		Redis:      rdb,
+		MQ:         producer,
+		Router:     router,
+		JWT:        jwtMgr,
+		WebhookBus: whBus,
 	}, nil
 }
 
@@ -200,6 +219,9 @@ func dirOf(path string) string {
 }
 
 func (a *Application) Close() {
+	if a.WebhookBus != nil {
+		a.WebhookBus.Stop()
+	}
 	if a.Redis != nil {
 		_ = a.Redis.Close()
 	}

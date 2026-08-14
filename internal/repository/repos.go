@@ -75,15 +75,18 @@ type OAuthAccountRepo interface {
 }
 
 type AuditFilter struct {
-	TenantID string
-	ClientID string
-	UserID   string
-	Action   string
-	Success  *bool
-	From     *time.Time
-	To       *time.Time
-	Limit    int
-	Offset   int
+	TenantID  string
+	ClientID  string
+	UserID    string
+	Action    string
+	Success   *bool
+	From      *time.Time
+	To        *time.Time
+	RequestID string
+	JTI       string
+	DeviceID  string
+	Limit     int
+	Offset    int
 }
 
 type AuditRepo interface {
@@ -151,5 +154,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.JoinRequest{},
 		&model.RoleBinding{},
 		&model.PlatformSetting{},
+		&model.WebhookEndpoint{},
+		&model.WebhookDelivery{},
 	)
 }

@@ -111,6 +111,8 @@ type OTPConfig struct {
 type PasswordConfig struct {
 	MinLength           int  `yaml:"min_length"`
 	RequireLetterNumber bool `yaml:"require_letter_number"`
+	MaxAgeDays          int  `yaml:"max_age_days"`        // 密码最长有效期，0=不过期
+	NotifyLoginEmail    bool `yaml:"notify_login_email"`  // 新设备登录邮件提醒
 }
 
 type MQConfig struct {
@@ -122,11 +124,23 @@ type MQConfig struct {
 }
 
 type SMSConfig struct {
-	Provider string `yaml:"provider"`
+	Provider        string `yaml:"provider"` // mock | mq | aliyun | tencent
+	AccessKeyID     string `yaml:"access_key_id"`
+	AccessKeySecret string `yaml:"access_key_secret"`
+	SignName        string `yaml:"sign_name"`
+	TemplateCode    string `yaml:"template_code"`
+	Region          string `yaml:"region"`
+	AppID           string `yaml:"app_id"` // 腾讯云 SmsSdkAppId
 }
 
 type EmailConfig struct {
-	Provider string `yaml:"provider"`
+	Provider        string `yaml:"provider"` // mock | mq | aliyun | tencent
+	AccessKeyID     string `yaml:"access_key_id"`
+	AccessKeySecret string `yaml:"access_key_secret"`
+	SignName        string `yaml:"sign_name"`
+	TemplateCode    string `yaml:"template_code"`
+	Region          string `yaml:"region"`
+	From            string `yaml:"from"`
 }
 
 type OAuthProviderConfig struct {
@@ -161,8 +175,28 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	cfg.ApplyEnvOverrides()
 	cfg.applyDefaults()
 	return &cfg, nil
+}
+
+// ApplyEnvOverrides 环境变量优先于 YAML，便于容器部署与 KMS 注入敏感配置。
+func (c *Config) ApplyEnvOverrides() {
+	set := func(target *string, key string) {
+		if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
+			*target = strings.TrimSpace(v)
+		}
+	}
+	set(&c.Admin.Token, "UAC_ADMIN_TOKEN")
+	set(&c.JWT.Secret, "UAC_JWT_SECRET")
+	set(&c.JWT.PrivateKeyPath, "UAC_JWT_PRIVATE_KEY_PATH")
+	set(&c.JWT.PublicKeyPath, "UAC_JWT_PUBLIC_KEY_PATH")
+	set(&c.Database.DSN, "UAC_DB_DSN")
+	set(&c.Redis.Addr, "UAC_REDIS_ADDR")
+	// Redis 密码允许显式置空
+	if v, ok := os.LookupEnv("UAC_REDIS_PASSWORD"); ok {
+		c.Redis.Password = v
+	}
 }
 
 func (c *Config) applyDefaults() {

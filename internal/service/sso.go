@@ -10,20 +10,26 @@ import (
 )
 
 type UpsertIdPRequest struct {
-	TenantID   string `json:"tenant_id" binding:"required"`
-	Domain     string `json:"domain" binding:"required"`
-	Provider   string `json:"provider" binding:"required"`
-	JITEnabled *bool  `json:"jit_enabled"`
-	AttrMap    string `json:"attr_map"`
-	Enabled    *bool  `json:"enabled"`
+	TenantID     string `json:"tenant_id" binding:"required"`
+	Domain       string `json:"domain" binding:"required"`
+	Provider     string `json:"provider" binding:"required"`
+	Protocol     string `json:"protocol"` // oidc | saml
+	JITEnabled   *bool  `json:"jit_enabled"`
+	AttrMap      string `json:"attr_map"`
+	SAMLEntityID string `json:"saml_entity_id"`
+	SAMLSSOURL   string `json:"saml_sso_url"`
+	SAMLCertPEM  string `json:"saml_cert_pem"`
+	Enabled      *bool  `json:"enabled"`
 }
 
 type SSODiscoverResult struct {
 	Domain     string `json:"domain"`
 	Provider   string `json:"provider"`
+	Protocol   string `json:"protocol"`
 	TenantID   string `json:"tenant_id"`
 	JITEnabled bool   `json:"jit_enabled"`
 	ForceSSO   bool   `json:"force_sso"`
+	SAMLStart  string `json:"saml_start_url,omitempty"`
 }
 
 func (s *AdminService) UpsertEnterpriseIdP(ctx context.Context, req UpsertIdPRequest) (*model.EnterpriseIdP, error) {
@@ -41,12 +47,23 @@ func (s *AdminService) UpsertEnterpriseIdP(ctx context.Context, req UpsertIdPReq
 		enabled = *req.Enabled
 	}
 	row := &model.EnterpriseIdP{
-		TenantID: strings.TrimSpace(req.TenantID),
-		Domain:   domain,
-		Provider: strings.TrimSpace(req.Provider),
-		JITEnabled: jit,
-		AttrMap:  strings.TrimSpace(req.AttrMap),
-		Enabled:  enabled,
+		TenantID:     strings.TrimSpace(req.TenantID),
+		Domain:       domain,
+		Provider:     strings.TrimSpace(req.Provider),
+		Protocol:     strings.ToLower(strings.TrimSpace(req.Protocol)),
+		JITEnabled:   jit,
+		AttrMap:      strings.TrimSpace(req.AttrMap),
+		SAMLEntityID: strings.TrimSpace(req.SAMLEntityID),
+		SAMLSSOURL:   strings.TrimSpace(req.SAMLSSOURL),
+		SAMLCertPEM:  strings.TrimSpace(req.SAMLCertPEM),
+		Enabled:      enabled,
+	}
+	if row.Protocol == "" {
+		if row.SAMLSSOURL != "" {
+			row.Protocol = "saml"
+		} else {
+			row.Protocol = "oidc"
+		}
 	}
 	if err := s.repos.IdP.Upsert(ctx, row); err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "保存 IdP 失败", err)
@@ -102,10 +119,21 @@ func (s *AuthService) DiscoverSSO(ctx context.Context, clientID, email string) (
 	if tenant != nil {
 		force = tenant.ForceSSO
 	}
-	return &SSODiscoverResult{
-		Domain: domain, Provider: idp.Provider, TenantID: idp.TenantID,
+	out := &SSODiscoverResult{
+		Domain: domain, Provider: idp.Provider, Protocol: idp.Protocol, TenantID: idp.TenantID,
 		JITEnabled: idp.JITEnabled, ForceSSO: force,
-	}, nil
+	}
+	if out.Protocol == "" {
+		if idp.SAMLSSOURL != "" {
+			out.Protocol = "saml"
+		} else {
+			out.Protocol = "oidc"
+		}
+	}
+	if out.Protocol == "saml" {
+		out.SAMLStart = "/api/v1/auth/saml/start?domain=" + domain
+	}
+	return out, nil
 }
 
 func (s *AuthService) assertLocalLoginAllowed(ctx context.Context, app *model.App, method string) error {

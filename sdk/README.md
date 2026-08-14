@@ -31,3 +31,16 @@ Introspect / JWKS / Step-up / Hosted：
 - `listSessions(accessToken, refreshToken?)` → 设备会话
 - `mfaComplete({ mfa_token, code })` → MFA 登录补全
 - `mergeStart` / `mergeConfirm` → 账号合并
+
+本地 JWKS 验签（支持 kid 双钥）：
+
+```go
+v := uac.NewJWKSVerifier("http://127.0.0.1:8080/.well-known/jwks.json", "unified-account-center")
+http.Handle("/api/", v.HTTPMiddleware(yourHandler))
+```
+
+```ts
+import { JWKSVerifier } from "./jwks";
+const v = new JWKSVerifier("http://127.0.0.1:8080/.well-known/jwks.json", "unified-account-center");
+const claims = await v.verify(accessToken);
+```

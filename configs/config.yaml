@@ -1,3 +1,13 @@
+# 环境变量优先级高于本文件（容器 / KMS 注入敏感配置时使用）：
+#   UAC_ADMIN_TOKEN            → admin.token
+#   UAC_JWT_SECRET             → jwt.secret
+#   UAC_JWT_PRIVATE_KEY_PATH   → jwt.private_key_path
+#   UAC_JWT_PUBLIC_KEY_PATH    → jwt.public_key_path
+#   UAC_DB_DSN                 → database.dsn
+#   UAC_REDIS_ADDR             → redis.addr
+#   UAC_REDIS_PASSWORD         → redis.password（允许显式置空）
+# 链路追踪：OTEL_SERVICE_NAME 可覆盖 trace 日志中的 service 名（默认 unified-account-center）
+
 server:
   addr: ":8080"
   mode: debug # debug | release
@@ -53,6 +63,8 @@ otp:
 password:
   min_length: 8
   require_letter_number: true
+  max_age_days: 0        # 密码最长有效期；>0 时登录返回 password_expired 标记
+  notify_login_email: false # 新设备登录时给已绑定邮箱发提醒（需 email provider 支持 SendMail）
 
 mq:
   enabled: false
@@ -62,11 +74,23 @@ mq:
   email_topic: "uac_email"
 
 sms:
-  provider: mock # mock | mq
-  # 开发环境验证码会打到日志；生产通过 MQ 异步发短信
+  provider: mock # mock | mq | aliyun | tencent
+  # 开发环境验证码会打到日志；生产通过 MQ 异步发短信，或直连云厂商
+  access_key_id: ""
+  access_key_secret: ""
+  sign_name: ""      # 短信签名
+  template_code: ""  # 短信模板 ID
+  region: ""         # 阿里云 cn-hangzhou / 腾讯云 ap-guangzhou
+  app_id: ""         # 腾讯云 SmsSdkAppId
 
 email:
-  provider: mock # mock | mq
+  provider: mock # mock | mq | aliyun | tencent
+  access_key_id: ""
+  access_key_secret: ""
+  sign_name: ""
+  template_code: ""
+  region: ""
+  from: ""           # 发信地址，如 no-reply@example.com
 
 oauth:
   providers:

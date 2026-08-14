@@ -16,6 +16,7 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/idgen"
 	"github.com/davveo/unified-account-center/internal/pkg/jwtutil"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
+	"github.com/davveo/unified-account-center/internal/pkg/webhook"
 	"github.com/davveo/unified-account-center/internal/repository"
 )
 
@@ -89,6 +90,7 @@ type AdminService struct {
 	jwt        *jwtutil.Manager
 	smsHot     *sms.HotSender
 	mqProducer mq.Producer
+	webhookBus *webhook.Bus
 }
 
 func NewAdminService(cfg *config.Config, repos *repository.Repos, oauthReg *oauth.Registry, rdb *redisx.Client) *AdminService {
@@ -100,6 +102,7 @@ type CreateAppRequest struct {
 	TenantID       string   `json:"tenant_id"`
 	AllowedMethods []string `json:"allowed_methods"`
 	RedirectURIs   []string `json:"redirect_uris"`
+	CORSOrigins    []string `json:"cors_origins"`
 	OAuthProviders []string `json:"oauth_providers"`
 	AutoRegister   *bool    `json:"auto_register"`
 	RequirePKCE    *bool    `json:"require_pkce"`
@@ -124,6 +127,7 @@ type AppView struct {
 	TenantID       string   `json:"tenant_id"`
 	AllowedMethods []string `json:"allowed_methods"`
 	RedirectURIs   []string `json:"redirect_uris"`
+	CORSOrigins    []string `json:"cors_origins"`
 	OAuthProviders []string `json:"oauth_providers"`
 	AutoRegister   bool     `json:"auto_register"`
 	RequirePKCE    bool     `json:"require_pkce"`
@@ -208,6 +212,10 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 	if redirects == nil {
 		redirects = []string{}
 	}
+	cors := req.CORSOrigins
+	if cors == nil {
+		cors = []string{}
+	}
 	providers := req.OAuthProviders
 	if providers == nil {
 		providers = []string{}
@@ -221,6 +229,7 @@ func (s *AdminService) CreateApp(ctx context.Context, req CreateAppRequest) (*Cr
 		TenantID:         tenantID,
 		AllowedMethods:   methods,
 		RedirectURIs:     redirects,
+		CORSOrigins:      cors,
 		OAuthProviders:   providers,
 		AutoRegister:     autoReg,
 		RequirePKCE:      req.RequirePKCE != nil && *req.RequirePKCE,
@@ -304,6 +313,7 @@ func toAppView(app *model.App) AppView {
 		TenantID:       app.TenantID,
 		AllowedMethods: append([]string{}, app.AllowedMethods...),
 		RedirectURIs:   append([]string{}, app.RedirectURIs...),
+		CORSOrigins:    append([]string{}, app.CORSOrigins...),
 		OAuthProviders: append([]string{}, app.OAuthProviders...),
 		AutoRegister:   app.AutoRegister,
 		RequirePKCE:    app.RequirePKCE,

@@ -1,0 +1,198 @@
+openapi: 3.0.3
+info:
+  title: Unified Account Center API
+  version: "1.0.0"
+  description: |
+    多账户认证中台 HTTP API。业务接口默认需 `X-Client-Id`；管理接口需 `X-Admin-Token` 或管理角色 Bearer。
+servers:
+  - url: http://127.0.0.1:8080
+    description: local
+tags:
+  - name: auth
+  - name: admin
+  - name: discovery
+paths:
+  /healthz:
+    get:
+      tags: [discovery]
+      summary: 存活探针（进程级）
+      responses:
+        "200":
+          description: ok
+  /readyz:
+    get:
+      tags: [discovery]
+      summary: 就绪探针（MySQL / Redis）
+      responses:
+        "200":
+          description: ready
+        "503":
+          description: not ready
+  /.well-known/jwks.json:
+    get:
+      tags: [discovery]
+      summary: JWKS（可含双钥）
+      responses:
+        "200":
+          description: JWKS
+  /.well-known/openid-configuration:
+    get:
+      tags: [discovery]
+      summary: OIDC Discovery
+      responses:
+        "200":
+          description: discovery document
+  /openapi.yaml:
+    get:
+      tags: [discovery]
+      summary: OpenAPI 文档
+      responses:
+        "200":
+          description: YAML
+  /api/v1/auth/challenge:
+    post:
+      tags: [auth]
+      summary: 发起验证码挑战
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method, identity, scene]
+              properties:
+                method: { type: string, example: phone_otp }
+                identity: { type: string }
+                scene: { type: string, example: login }
+                captcha_token: { type: string }
+      responses:
+        "200":
+          description: challenge created
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: 登录
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method, identity]
+              properties:
+                method: { type: string }
+                identity: { type: string }
+                credential: { type: object }
+                device_id: { type: string }
+                invite_code: { type: string }
+      responses:
+        "200":
+          description: tokens or MFA challenge
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: 刷新 Token
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      responses:
+        "200":
+          description: new tokens
+  /api/v1/auth/introspect:
+    get:
+      tags: [auth]
+      summary: Token 内省
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+        - $ref: "#/components/parameters/ClientSecret"
+      responses:
+        "200":
+          description: introspection result
+  /api/v1/auth/userinfo:
+    get:
+      tags: [auth]
+      summary: OIDC UserInfo
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: userinfo
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: 当前用户资料
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      responses:
+        "200":
+          description: profile
+  /api/v1/admin/dashboard:
+    get:
+      tags: [admin]
+      summary: 运营概览
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: dashboard
+  /api/v1/admin/webhooks:
+    get:
+      tags: [admin]
+      summary: Webhook 列表
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: list
+    post:
+      tags: [admin]
+      summary: 创建 Webhook
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: created
+  /api/v1/admin/jwt-keys:
+    get:
+      tags: [admin]
+      summary: JWT 双钥状态
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: status
+  /api/v1/admin/jwt-keys/rotate:
+    post:
+      tags: [admin]
+      summary: 轮换 JWT 签名钥
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: rotated
+components:
+  parameters:
+    ClientId:
+      name: X-Client-Id
+      in: header
+      required: true
+      schema: { type: string }
+    ClientSecret:
+      name: X-Client-Secret
+      in: header
+      required: true
+      schema: { type: string }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    adminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token

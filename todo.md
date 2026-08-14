@@ -118,7 +118,7 @@
 ### 10. 企业 SSO
 
 - [x] OIDC Enterprise（按邮箱域名路由 IdP）
-- [ ] SAML 2.0（可选，暂缓）
+- [x] SAML 2.0（可选，暂缓）
 - [x] JIT 建用户与属性映射
 - [x] 企业侧强制 SSO / 禁用本地密码策略
 
@@ -150,7 +150,7 @@
 
 ### 13. OpenAPI 与 OIDC Discovery
 
-- [ ] OpenAPI 3.0 规范与自动生成
+- [x] OpenAPI 3.0 规范与自动生成
 - [x] `/.well-known/openid-configuration`
 - [x] 标准 `userinfo` 端点
 - [x] 网关对接示例更新
@@ -159,15 +159,15 @@
 
 ### 14. Webhook / 出站事件
 
-- [ ] 事件：`user.created` / `login.failed` / `identity.bound` / `user.disabled`
-- [ ] 签名校验、重试、死信
-- [ ] 管理后台配置 webhook URL
+- [x] 事件：`user.created` / `login.failed` / `identity.bound` / `user.disabled`
+- [x] 签名校验、重试、死信
+- [x] 管理后台配置 webhook URL
 
 
 
 ### 15. 密钥与轮换运营
 
-- [ ] Admin token / Client secret 进 KMS 或环境变量
+- [x] Admin token / Client secret 进 KMS 或环境变量
 - [x] JWT `kid` 双钥滚动（旧钥只验不签）
 - [x] 短信 / OAuth 密钥热更新
 - [x] 密钥轮换操作审计
@@ -176,8 +176,8 @@
 
 ### 16. SDK 加深
 
-- [ ] Go/TS 本地 JWKS 验签中间件
-- [ ] 托管登录跳转 + code 换 token helper
+- [x] Go/TS 本地 JWKS 验签中间件
+- [x] 托管登录跳转 + code 换 token helper
 - [ ] Java SDK（服务端验票）
 - [ ] SDK 版本发布与 changelog
 
@@ -185,10 +185,10 @@
 
 ### 17. 可观测补强
 
-- [ ] OpenTelemetry tracing
+- [x] OpenTelemetry tracing
 - [x] 审计日志导出（CSV / 对象存储）
 - [x] Dashboard：登录成功率、OTP 发送量、刷短信告警
-- [ ] `/readyz` 与深检分级（liveness vs readiness）
+- [x] `/readyz` 与深检分级（liveness vs readiness）
 
 ---
 
@@ -201,8 +201,8 @@
 | ----- | ------------------------------ | ------------- | ----------- |
 | 下一迭代  | #1 托管登录页、#3 设备会话、#4 真实 captcha | 接入体验 + 防刷立刻可见 | ✅ 已完成（含 #2） |
 | 再下一迭代 | #5–#8 TOTP MFA / Passkey / 合并 / 风控 | 安全与账户体验     | ✅ 已完成          |
-| 中期    | #9–#12 多租户/企业 SSO/邀请/RBAC      | B 端与治理能力     | ✅ 已完成（SAML 暂缓） |
-| 长期    | #13–#17 工程化                    | 可维护性与生态对接     | 部分完成（OIDC/userinfo、网关文档、热更新、轮换审计、导出、Dashboard） |
+| 中期    | #9–#12 多租户/企业 SSO/邀请/RBAC      | B 端与治理能力     | ✅ 已完成（含 SAML 最小 SP） |
+| 长期    | #13–#17 工程化                    | 可维护性与生态对接     | ✅ 基本完成（剩 Java SDK / changelog） |
 
 
 ---

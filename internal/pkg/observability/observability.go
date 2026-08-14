@@ -46,7 +46,7 @@ func Middleware() gin.HandlerFunc {
 		if status >= 500 {
 			reqErrors.Add(1)
 		}
-		logJSON(map[string]interface{}{
+		fields := map[string]interface{}{
 			"msg":        "http_request",
 			"method":     c.Request.Method,
 			"path":       c.FullPath(),
@@ -54,7 +54,11 @@ func Middleware() gin.HandlerFunc {
 			"latency_ms": time.Since(start).Milliseconds(),
 			"request_id": c.GetString("request_id"),
 			"client_ip":  c.ClientIP(),
-		})
+		}
+		if traceID := c.GetString("trace_id"); traceID != "" {
+			fields["trace_id"] = traceID
+		}
+		logJSON(fields)
 	}
 }
 

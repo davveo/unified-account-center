@@ -26,9 +26,11 @@ func (h *AuthHandler) meta(c *gin.Context) service.RequestMeta {
 		cid = c.GetHeader("X-Client-Id")
 	}
 	return service.RequestMeta{
-		ClientID: cid,
-		IP:       c.ClientIP(),
-		UA:       c.Request.UserAgent(),
+		ClientID:  cid,
+		IP:        c.ClientIP(),
+		UA:        c.Request.UserAgent(),
+		RequestID: c.GetString("request_id"),
+		DeviceID:  c.GetHeader("X-Device-Id"),
 	}
 }
 
@@ -579,6 +581,40 @@ func (h *AuthHandler) DiscoverSSO(c *gin.Context) {
 		email = body.Email
 	}
 	res, err := h.auth.DiscoverSSO(c.Request.Context(), h.meta(c).ClientID, email)
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) SAMLStart(c *gin.Context) {
+	res, err := h.auth.StartSAML(c.Request.Context(), h.meta(c).ClientID, c.Query("domain"), c.Query("relay_state"))
+	if err != nil {
+		response.FailErr(c, err)
+		return
+	}
+	if c.Query("redirect") == "1" {
+		c.Redirect(302, res.RedirectURL)
+		return
+	}
+	response.OK(c, res)
+}
+
+func (h *AuthHandler) SAMLACS(c *gin.Context) {
+	samlResp := c.PostForm("SAMLResponse")
+	if samlResp == "" {
+		var body struct {
+			SAMLResponse string `json:"SAMLResponse"`
+			RelayState   string `json:"RelayState"`
+		}
+		_ = c.ShouldBindJSON(&body)
+		samlResp = body.SAMLResponse
+		if c.PostForm("RelayState") == "" && body.RelayState != "" {
+			c.Request.PostForm = map[string][]string{"RelayState": {body.RelayState}}
+		}
+	}
+	res, err := h.auth.FinishSAML(c.Request.Context(), h.meta(c), samlResp, c.PostForm("RelayState"))
 	if err != nil {
 		response.FailErr(c, err)
 		return

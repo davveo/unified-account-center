@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/davveo/unified-account-center/internal/adapter"
 	"github.com/davveo/unified-account-center/internal/authenticator"
 	"github.com/davveo/unified-account-center/internal/config"
 	"github.com/davveo/unified-account-center/internal/model"
@@ -18,16 +19,19 @@ import (
 	"github.com/davveo/unified-account-center/internal/pkg/observability"
 	"github.com/davveo/unified-account-center/internal/pkg/pkce"
 	"github.com/davveo/unified-account-center/internal/pkg/redisx"
+	"github.com/davveo/unified-account-center/internal/pkg/webhook"
 	"github.com/davveo/unified-account-center/internal/repository"
 )
 
 type AuthService struct {
-	cfg   *config.Config
-	repos *repository.Repos
-	auths *authenticator.Registry
-	jwt   *jwtutil.Manager
-	redis *redisx.Client
-	oauth *OAuthService
+	cfg        *config.Config
+	repos      *repository.Repos
+	auths      *authenticator.Registry
+	jwt        *jwtutil.Manager
+	redis      *redisx.Client
+	oauth      *OAuthService
+	webhookBus *webhook.Bus
+	mailer     adapter.Mailer
 }
 
 func NewAuthService(cfg *config.Config, repos *repository.Repos, auths *authenticator.Registry, jwtMgr *jwtutil.Manager, redis *redisx.Client) *AuthService {
@@ -36,6 +40,17 @@ func NewAuthService(cfg *config.Config, repos *repository.Repos, auths *authenti
 
 func (s *AuthService) SetOAuth(oauth *OAuthService) {
 	s.oauth = oauth
+}
+
+func (s *AuthService) SetWebhookBus(bus *webhook.Bus) { s.webhookBus = bus }
+
+func (s *AuthService) SetMailer(m adapter.Mailer) { s.mailer = m }
+
+func (s *AuthService) emit(eventType, tenantID, clientID, userID string, data map[string]interface{}) {
+	if s.webhookBus == nil {
+		return
+	}
+	s.webhookBus.Emit(context.Background(), eventType, tenantID, clientID, userID, data)
 }
 
 type ClientInfo struct {
@@ -66,13 +81,15 @@ type LoginDTO struct {
 }
 
 type TokenDTO struct {
-	AccessToken     string `json:"access_token"`
-	TokenType       string `json:"token_type"`
-	ExpireIn        int64  `json:"expire_in"`
-	RefreshToken    string `json:"refresh_token"`
-	RefreshExpireIn int64  `json:"refresh_expire_in"`
-	DeviceID        string `json:"device_id,omitempty"`
-	RefreshJTI      string `json:"refresh_jti,omitempty"`
+	AccessToken        string `json:"access_token"`
+	TokenType          string `json:"token_type"`
+	ExpireIn           int64  `json:"expire_in"`
+	RefreshToken       string `json:"refresh_token"`
+	RefreshExpireIn    int64  `json:"refresh_expire_in"`
+	DeviceID           string `json:"device_id,omitempty"`
+	RefreshJTI         string `json:"refresh_jti,omitempty"`
+	PasswordExpired    bool   `json:"password_expired,omitempty"`
+	MustChangePassword bool   `json:"must_change_password,omitempty"`
 }
 
 type IdentityView struct {
@@ -100,9 +117,12 @@ type LoginResult struct {
 }
 
 type RequestMeta struct {
-	ClientID string
-	IP       string
-	UA       string
+	ClientID  string
+	IP        string
+	UA        string
+	RequestID string
+	JTI       string
+	DeviceID  string
 }
 
 func userViewOf(u *model.User, roles []string) UserView {
@@ -230,6 +250,9 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 		s.audit(ctx, app, "", "login_fail", false, dto.Method, meta)
 		observability.IncLogin(false)
 		s.noteLoginFailure(ctx, dto.Identity, meta.IP)
+		s.emit(model.EventLoginFailed, app.TenantID, app.ClientID, "", map[string]interface{}{
+			"method": dto.Method, "identity": dto.Identity, "reason": "verify_failed",
+		})
 		return nil, err
 	}
 
@@ -287,6 +310,15 @@ func (s *AuthService) Login(ctx context.Context, meta RequestMeta, dto LoginDTO)
 	roles, _ := s.rolesForUser(ctx, user.UserID, app.TenantID)
 	s.audit(ctx, app, user.UserID, "login_ok", true, dto.Method, meta)
 	observability.IncLogin(true)
+	ev := model.EventLoginOK
+	data := map[string]interface{}{"method": dto.Method, "is_new_user": isNew, "device_id": token.DeviceID}
+	if isNew {
+		s.emit(model.EventUserCreated, app.TenantID, app.ClientID, user.UserID, data)
+	}
+	s.emit(ev, app.TenantID, app.ClientID, user.UserID, data)
+	if newDevice {
+		s.notifyNewDeviceLogin(ctx, user, app, meta, dto.Client.DeviceID)
+	}
 	return &LoginResult{
 		User:       userViewOf(user, roles),
 		Identities: views,
@@ -480,9 +512,9 @@ func (s *AuthService) Bind(ctx context.Context, meta RequestMeta, userID string,
 			return nil
 		}
 		return errcode.NewWithData(errcode.ConflictAccount, "该账户已被其他用户绑定", map[string]interface{}{
-			"merge_available":   true,
-			"conflict_user_id":  existing.UserID,
-			"hint":              "可调用 POST /api/v1/auth/merge/start 验证对方身份后合并",
+			"merge_available":  true,
+			"conflict_user_id": existing.UserID,
+			"hint":             "可调用 POST /api/v1/auth/merge/start 验证对方身份后合并",
 		})
 	}
 	if err := s.repos.Identity.Create(ctx, &model.Identity{
@@ -505,6 +537,9 @@ func (s *AuthService) Bind(ctx context.Context, meta RequestMeta, userID string,
 		})
 	}
 	s.audit(ctx, app, userID, "bind_ok", true, principal.Type+":"+principal.Identifier, meta)
+	s.emit(model.EventIdentityBound, app.TenantID, app.ClientID, userID, map[string]interface{}{
+		"type": principal.Type, "identifier": principal.Identifier, "provider": principal.Provider,
+	})
 	return nil
 }
 
@@ -572,6 +607,9 @@ func (s *AuthService) Unbind(ctx context.Context, meta RequestMeta, userID strin
 		return errcode.Wrap(errcode.Internal, "解绑失败", err)
 	}
 	s.audit(ctx, app, userID, "unbind_ok", true, target.Type+":"+target.Identifier, meta)
+	s.emit(model.EventIdentityUnbound, app.TenantID, app.ClientID, userID, map[string]interface{}{
+		"type": target.Type, "identifier": target.Identifier, "provider": target.Provider,
+	})
 	return nil
 }
 
@@ -600,6 +638,7 @@ func (s *AuthService) SetPassword(ctx context.Context, meta RequestMeta, userID 
 	}
 	_ = s.repos.Refresh.RevokeAllByUser(ctx, userID, app.ClientID, time.Now())
 	s.audit(ctx, app, userID, "password_set", true, "", meta)
+	s.emit(model.EventPasswordChanged, app.TenantID, app.ClientID, userID, map[string]interface{}{})
 	return nil
 }
 
@@ -873,20 +912,20 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 		client.DeviceID = idgen.New("dev")
 	}
 	rt := &model.RefreshToken{
-		JTI:       jti,
-		TokenHash: crypto.HashToken(rtPlain),
-		UserID:    user.UserID,
-		ClientID:  app.ClientID,
-		DeviceID:  client.DeviceID,
+		JTI:         jti,
+		TokenHash:   crypto.HashToken(rtPlain),
+		UserID:      user.UserID,
+		ClientID:    app.ClientID,
+		DeviceID:    client.DeviceID,
 		Fingerprint: client.Fingerprint,
-		IP:        meta.IP,
-		UA:        meta.UA,
-		ExpireAt:  time.Now().Add(refreshTTL),
+		IP:          meta.IP,
+		UA:          meta.UA,
+		ExpireAt:    time.Now().Add(refreshTTL),
 	}
 	if err := s.repos.Refresh.Create(ctx, rt); err != nil {
 		return nil, errcode.Wrap(errcode.Internal, "保存 refresh_token 失败", err)
 	}
-	return &TokenDTO{
+	tok := &TokenDTO{
 		AccessToken:     access,
 		TokenType:       "Bearer",
 		ExpireIn:        int64(accessTTL.Seconds()),
@@ -894,7 +933,60 @@ func (s *AuthService) issueTokens(ctx context.Context, app *model.App, user *mod
 		RefreshExpireIn: int64(refreshTTL.Seconds()),
 		DeviceID:        client.DeviceID,
 		RefreshJTI:      jti,
-	}, nil
+	}
+	if expired, must := s.passwordExpiryFlags(ctx, user.UserID); expired {
+		tok.PasswordExpired = true
+		tok.MustChangePassword = must
+	}
+	return tok, nil
+}
+
+func (s *AuthService) passwordExpiryFlags(ctx context.Context, userID string) (expired, mustChange bool) {
+	days := 0
+	if s.cfg != nil {
+		days = s.cfg.Password.MaxAgeDays
+	}
+	if days <= 0 {
+		return false, false
+	}
+	cred, err := s.repos.Credential.FindByUserID(ctx, userID)
+	if err != nil || cred == nil || cred.PasswordHash == "" {
+		return false, false
+	}
+	updated := cred.PasswordUpdatedAt
+	if updated == nil {
+		updated = &cred.UpdatedAt
+	}
+	if updated == nil {
+		return true, true
+	}
+	if time.Since(*updated) > time.Duration(days)*24*time.Hour {
+		return true, true
+	}
+	return false, false
+}
+
+func (s *AuthService) notifyNewDeviceLogin(ctx context.Context, user *model.User, app *model.App, meta RequestMeta, deviceID string) {
+	if s.cfg == nil || !s.cfg.Password.NotifyLoginEmail || s.mailer == nil {
+		return
+	}
+	ids, err := s.repos.Identity.ListByUserID(ctx, user.UserID)
+	if err != nil {
+		return
+	}
+	var to string
+	for _, id := range ids {
+		if id.Type == model.IdentityEmail && id.Identifier != "" {
+			to = id.Identifier
+			break
+		}
+	}
+	if to == "" {
+		return
+	}
+	subject := "新设备登录提醒"
+	body := "您的账号在新设备登录。\n应用: " + app.Name + "\nIP: " + meta.IP + "\nUA: " + meta.UA + "\n设备: " + deviceID + "\n"
+	_ = s.mailer.SendMail(ctx, to, subject, body)
 }
 
 func (s *AuthService) identityViews(ctx context.Context, userID string) ([]IdentityView, error) {
@@ -941,14 +1033,18 @@ func (s *AuthService) validatePassword(pwd string) error {
 
 func (s *AuthService) audit(ctx context.Context, app *model.App, userID, action string, success bool, detail string, meta RequestMeta) {
 	_ = s.repos.Audit.Create(ctx, &model.AuditLog{
-		TenantID: app.TenantID,
-		ClientID: app.ClientID,
-		UserID:   userID,
-		Action:   action,
-		Success:  success,
-		Detail:   strings.TrimSpace(detail),
-		IP:       meta.IP,
-		UA:       meta.UA,
+		TenantID:  app.TenantID,
+		ClientID:  app.ClientID,
+		UserID:    userID,
+		Action:    action,
+		Success:   success,
+		Detail:    strings.TrimSpace(detail),
+		IP:        meta.IP,
+		UA:        meta.UA,
+		RequestID: meta.RequestID,
+		JTI:       meta.JTI,
+		DeviceID:  meta.DeviceID,
+		CreatedAt: time.Now(),
 	})
 }
 

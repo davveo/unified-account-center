@@ -170,6 +170,7 @@ type App struct {
 	TenantID         string     `gorm:"size:64;not null;default:default" json:"tenant_id"`
 	AllowedMethods   StringList `gorm:"type:json;not null" json:"allowed_methods"`
 	RedirectURIs     StringList `gorm:"type:json;not null" json:"redirect_uris"`
+	CORSOrigins      StringList `gorm:"type:json" json:"cors_origins"` // 浏览器 Origin 白名单；空=不启用 CORS 头
 	OAuthProviders   StringList `gorm:"type:json" json:"oauth_providers"`
 	AutoRegister     bool       `gorm:"not null;default:true" json:"auto_register"`
 	RequirePKCE      bool       `gorm:"not null;default:false" json:"require_pkce"`
@@ -231,6 +232,9 @@ type AuditLog struct {
 	Detail    string    `gorm:"type:text" json:"detail"`
 	IP        string    `gorm:"size:64" json:"ip"`
 	UA        string    `gorm:"size:512" json:"ua"`
+	RequestID string    `gorm:"size:64;index" json:"request_id,omitempty"`
+	JTI       string    `gorm:"size:64;index" json:"jti,omitempty"`
+	DeviceID  string    `gorm:"size:128;index" json:"device_id,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -281,17 +285,21 @@ type Tenant struct {
 
 func (Tenant) TableName() string { return "tenants" }
 
-// EnterpriseIdP 按邮箱域名路由到 OAuth/OIDC Provider。
+// EnterpriseIdP 按邮箱域名路由到 OAuth/OIDC 或 SAML Provider。
 type EnterpriseIdP struct {
-	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	TenantID   string    `gorm:"size:64;index;not null;uniqueIndex:uk_idp_domain" json:"tenant_id"`
-	Domain     string    `gorm:"size:128;not null;uniqueIndex:uk_idp_domain" json:"domain"` // acme.com
-	Provider   string    `gorm:"size:64;not null" json:"provider"`                         // oauth provider name
-	JITEnabled bool      `gorm:"not null;default:true" json:"jit_enabled"`
-	AttrMap    string    `gorm:"type:text" json:"attr_map"` // JSON: email/name/avatar keys
-	Enabled    bool      `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID           uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	TenantID     string    `gorm:"size:64;index;not null;uniqueIndex:uk_idp_domain" json:"tenant_id"`
+	Domain       string    `gorm:"size:128;not null;uniqueIndex:uk_idp_domain" json:"domain"` // acme.com
+	Protocol     string    `gorm:"size:16;not null;default:oidc" json:"protocol"`            // oidc | saml
+	Provider     string    `gorm:"size:64;not null" json:"provider"`                         // oauth provider name / saml idp key
+	JITEnabled   bool      `gorm:"not null;default:true" json:"jit_enabled"`
+	AttrMap      string    `gorm:"type:text" json:"attr_map"` // JSON: email/name/avatar keys
+	SAMLEntityID string    `gorm:"size:255" json:"saml_entity_id,omitempty"`
+	SAMLSSOURL   string    `gorm:"size:512" json:"saml_sso_url,omitempty"`
+	SAMLCertPEM  string    `gorm:"type:text" json:"saml_cert_pem,omitempty"`
+	Enabled      bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 func (EnterpriseIdP) TableName() string { return "enterprise_idps" }
@@ -355,3 +363,54 @@ type PlatformSetting struct {
 }
 
 func (PlatformSetting) TableName() string { return "platform_settings" }
+
+const (
+	WebhookDeliveryPending = "pending"
+	WebhookDeliverySuccess = "success"
+	WebhookDeliveryRetry   = "retrying"
+	WebhookDeliveryDead    = "dead"
+
+	EventUserCreated    = "user.created"
+	EventLoginOK        = "login.ok"
+	EventLoginFailed    = "login.failed"
+	EventIdentityBound  = "identity.bound"
+	EventIdentityUnbound = "identity.unbound"
+	EventUserDisabled   = "user.disabled"
+	EventUserEnabled    = "user.enabled"
+	EventPasswordChanged = "password.changed"
+)
+
+// WebhookEndpoint 出站事件订阅。
+type WebhookEndpoint struct {
+	ID             uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name           string     `gorm:"size:128;not null" json:"name"`
+	URL            string     `gorm:"size:512;not null" json:"url"`
+	Secret         string     `gorm:"size:128;not null" json:"-"` // HMAC 签名密钥
+	Events         StringList `gorm:"type:json;not null" json:"events"` // 空=全部
+	Enabled        bool       `gorm:"not null;default:true" json:"enabled"`
+	TimeoutSec     int        `gorm:"not null;default:5" json:"timeout_sec"`
+	MaxAttempts    int        `gorm:"not null;default:5" json:"max_attempts"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+func (WebhookEndpoint) TableName() string { return "webhook_endpoints" }
+
+// WebhookDelivery 投递记录（含重试与死信）。
+type WebhookDelivery struct {
+	ID           uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	EndpointID   uint64     `gorm:"index;not null" json:"endpoint_id"`
+	EventID      string     `gorm:"size:64;index;not null" json:"event_id"`
+	EventType    string     `gorm:"size:64;index;not null" json:"event_type"`
+	PayloadJSON  string     `gorm:"type:text;not null" json:"payload_json"`
+	Status       string     `gorm:"size:32;index;not null;default:pending" json:"status"`
+	Attempts     int        `gorm:"not null;default:0" json:"attempts"`
+	LastStatus   int        `gorm:"not null;default:0" json:"last_http_status"`
+	LastError    string     `gorm:"size:512" json:"last_error,omitempty"`
+	NextRetryAt  *time.Time `gorm:"index" json:"next_retry_at,omitempty"`
+	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+func (WebhookDelivery) TableName() string { return "webhook_deliveries" }
