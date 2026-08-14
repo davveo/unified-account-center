@@ -36,3 +36,10 @@ configs/keys/
 # Editor/IDE
 .idea/
 # .vscode/
+
+# Python SDK
+sdk/python/.venv/
+sdk/python/.pytest_cache/
+sdk/python/**/*.egg-info/
+__pycache__/
+*.pyc

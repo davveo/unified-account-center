@@ -104,6 +104,8 @@ func NewRouter(d Deps) *gin.Engine {
 
 	adminStatic, err := fs.Sub(web.AdminFS, "admin")
 	if err == nil {
+		// 站点根路径默认进入管理后台；未登录由 admin SPA 展示登录门
+		r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/admin/") })
 		r.GET("/admin", func(c *gin.Context) { c.Redirect(http.StatusFound, "/admin/") })
 		r.GET("/admin/", func(c *gin.Context) {
 			data, err := fs.ReadFile(adminStatic, "index.html")
