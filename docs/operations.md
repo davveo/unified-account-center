@@ -8,4 +8,5 @@
 | **终端用户版** | 最终用户 / App 联调：登录、MFA、Passkey、邀请码、合并 | [operations-user.md](./operations-user.md) |
 
 业务方接口约定与错误码见 [integration.md](./integration.md)。  
-网关对接（JWKS / introspect / userinfo）见 [gateway.md](./gateway.md)。
+网关对接（JWKS / introspect / userinfo）见 [gateway.md](./gateway.md)。  
+**功能点与实现逻辑全景**见 [features.md](./features.md)。
